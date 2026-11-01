@@ -2,6 +2,14 @@
 
 Application **macOS locale** : une fenêtre Dofus choisie → OCR Apple Vision français → voix Piper CPU persistante par PNJ. Sans LLM, compte, API payante, modification du client, interception réseau ou automatisation du jeu. Projet indépendant d’Ankama et de Romandub ; aucun enregistrement de ces créateurs n’est utilisé.
 
+## Priorité actuelle et perspective
+
+**Objectif immédiat :** détecter l’ouverture d’un dialogue dans la seule fenêtre Dofus choisie, identifier le PNJ et récupérer le texte de sa réplique. La piste réseau passive n’est pas intégrée à l’application ; une preuve ponctuelle a été obtenue sur une session réelle de Dofus 3.7.12.12 : 149 paquets capturés, une ouverture de dialogue et cinq répliques d’Agride Shakoku résolues sans OCR. La capture a nécessité une autorisation administrateur ponctuelle, expressément accordée, sans modifier durablement les permissions. L’analyse a été faite après capture, avec des correspondances statiques inspectées manuellement dans la [publication communautaire correspondant à cette version](https://github.com/ledouxm/dofus-sqlite/releases/tag/v6.0_3.7.12.12) : ce n’est pas encore un détecteur générique en direct. Aucun proxy, envoi d’action au jeu ou changement du client. Les paquets restent locaux, hors Git. La base OCR reste disponible.
+
+**Perspective à long terme, hors du travail immédiat :** proposer à Ankama un produit local autonome avec voix de base et choix personnel des voix par PNJ, accompagné d’un service communautaire. Les joueurs pourraient prévisualiser et valider l’envoi du texte et de l’audio, y compris des enregistrements humains autorisés, vers un serveur distant. Une interface web permettrait de voter positivement ou négativement pour les voix associées aux PNJ et d’en proposer les mieux classées par défaut, sans écraser les choix personnels. Le lecteur local resterait utilisable hors ligne après préparation ; les contributions et mises à jour communautaires nécessiteraient une connexion.
+
+Cette perspective n’est pas implémentée et n’implique aucune affiliation ou approbation d’Ankama. Aucun clonage vocal n’est autorisé ; les droits des contributeurs, les autorisations relatives aux textes et les modalités de modération restent à définir avant publication du service.
+
 ## Installer et lancer
 
 Prérequis : macOS 14+, **Python 3.13** et outils Apple Command Line Tools (`xcode-select --install` si absents). Testé sur M4 / 32 Go / macOS 26.5.2 / Python 3.13.8. Windows hors périmètre.
