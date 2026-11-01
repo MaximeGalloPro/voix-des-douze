@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import threading
+import subprocess
+import sys
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
@@ -15,6 +17,7 @@ from . import macos
 from .demo import DemoSource, REGIONS, render_slide
 from .hotkeys import GlobalHotkeys, KEYS
 from .monitor import Monitor
+from .network import NetworkSession, clients as network_clients
 from .playback import Playback, Utterance
 from .settings import Store, model_directory
 from .speech import SpeechEngine, available_voices
@@ -31,6 +34,9 @@ class Events(QObject):
     snapshot = Signal(object)
     ready = Signal()
     vision_ready = Signal()
+    clients = Signal(object)
+    network = Signal(int, str, object)
+    network_prepared = Signal(bool, str)
 
 
 class Preview(QWidget):
@@ -143,6 +149,9 @@ class MainWindow(QMainWindow):
         self.voice_map = {v.key: v for v in self.voices}
         self.monitor = None
         self.session = 0
+        self.network = None
+        self.network_token = 0
+        self.network_mode = False
         self.last_dialogue = None
         self.last_image = None
         self.last_regions = {}
@@ -165,6 +174,9 @@ class MainWindow(QMainWindow):
         self.events.ready.connect(lambda: self.metrics.setText(
             "Piper préchauffé • OCR / démarrage audio : en attente" if self.voices else "Aucun modèle vocal installé"))
         self.events.vision_ready.connect(self.vision_prepared)
+        self.events.clients.connect(self.show_clients)
+        self.events.network.connect(self.network_event)
+        self.events.network_prepared.connect(self.network_prepared)
         self.build_ui()
         self.apply_settings()
         self.hotkeys = GlobalHotkeys(self.events.hotkey.emit)
@@ -218,9 +230,21 @@ class MainWindow(QMainWindow):
         captures.addWidget(test_button)
         self.button(captures, "Démonstration", self.start_demo)
         captures.addStretch()
+        network_row = QHBoxLayout()
+        source_rows.addLayout(network_row)
+        self.client_combo = QComboBox()
+        self.client_combo.addItem("Choisir un client Dofus pour le réseau…", None)
+        self.client_combo.setMinimumWidth(280)
+        network_row.addWidget(self.client_combo, 1)
+        self.network_button = self.button(network_row, "Démarrer l’écoute réseau", self.start_network)
+        self.network_prepare_button = self.button(network_row, "Préparer données réseau (~90 Mo)", self.prepare_network)
+        self.network_prepare_button.setToolTip("Téléchargement explicite du catalogue français vérifié. Aucun téléchargement au démarrage de l’écoute.")
+        self.network_status = QLabel("Réseau arrêté · autorisation administrateur par session · aucun service permanent")
+        self.network_status.setWordWrap(True)
+        source_rows.addWidget(self.network_status)
         layout.addWidget(source_box)
         control = QHBoxLayout()
-        self.start_button = self.button(control, "Démarrer", self.start)
+        self.start_button = self.button(control, "Démarrer OCR", self.start)
         self.pause_button = self.button(control, "Suspendre", self.toggle_pause)
         self.button(control, "Arrêter", self.stop)
         self.button(control, "Lire / Relire", self.replay)
@@ -250,7 +274,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.npc)
         self.text = QTextEdit()
         self.text.setReadOnly(True)
-        self.text.setPlaceholderText("Le texte OCR apparaîtra ici. Le mode à la demande reconnaît sans parler.")
+        self.text.setPlaceholderText("Le texte du dialogue apparaîtra ici — OCR ou réseau selon le mode choisi.")
         right_layout.addWidget(self.text, 2)
         self.responses = QTextEdit()
         self.responses.setReadOnly(True)
@@ -348,7 +372,106 @@ class MainWindow(QMainWindow):
                     self.events.error.emit(str(exc))
         threading.Thread(target=run, daemon=True).start()
 
+    def show_clients(self, clients):
+        previous = self.client_combo.currentData()
+        self.client_combo.blockSignals(True)
+        self.client_combo.clear()
+        self.client_combo.addItem("Choisir un client Dofus pour le réseau…", None)
+        for client in clients:
+            self.client_combo.addItem(client.label, client)
+            if previous and client.pid == previous.pid:
+                self.client_combo.setCurrentIndex(self.client_combo.count() - 1)
+        if len(clients) == 1 and self.client_combo.currentIndex() == 0:
+            self.client_combo.setCurrentIndex(1)
+        self.client_combo.blockSignals(False)
+
+    def prepare_network(self):
+        self.network_prepare_button.setEnabled(False)
+        self.network_status.setText("Téléchargement explicite et vérification du catalogue français…")
+
+        def work():
+            try:
+                script = Path(__file__).resolve().parents[1] / "scripts/prepare_network.py"
+                result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=300)
+                success = result.returncode == 0
+                message = "Catalogue réseau préparé. Sélectionnez le client puis démarrez l’écoute." if success else result.stderr[-1200:]
+            except Exception as exc:
+                success, message = False, str(exc)
+            if not self.shutting_down:
+                self.events.network_prepared.emit(success, message)
+        threading.Thread(target=work, daemon=True).start()
+
+    def network_prepared(self, success, message):
+        self.network_prepare_button.setEnabled(True)
+        self.network_status.setText(message)
+        if not success:
+            self.show_error(message)
+
+    def start_network(self):
+        client = self.client_combo.currentData()
+        if client is None:
+            self.show_error("Ouvrez Dofus, actualisez puis choisissez le client réseau à suivre.")
+            return
+        if self.network is not None:
+            self.show_error("Attendez la fin de l’écoute précédente avant de la relancer.")
+            return
+        self.stop()
+        self.clear_dialogue()
+        self.network_mode = True
+        self.session += 1
+        session = self.network_token = self.session
+        self.network_button.setEnabled(False)
+        self.client_combo.setEnabled(False)
+        self.read_responses.setEnabled(False)
+        self.network_status.setText(f"Vérification de {client.label} et demande d’autorisation…")
+        self.network = NetworkSession(client,
+            lambda kind, value: self.events.network.emit(session, kind, value) if not self.shutting_down else None,
+            lambda: self.playback.cancel() if session == self.session else None)
+
+    def network_event(self, token, kind, value):
+        if token != self.network_token:
+            return
+        if kind == "stopped":
+            self.network = None
+            self.network_button.setEnabled(True)
+            self.client_combo.setEnabled(True)
+            self.read_responses.setEnabled(True)
+            self.network_status.setText("Réseau arrêté · aucun paquet capturé" if not value else f"Réseau arrêté · {value}")
+            if token == self.session:
+                self.clear_dialogue()
+                self.status.setText(value or "Écoute réseau terminée.")
+            return
+        if token != self.session or self.network is None:
+            return
+        if kind == "authorizing":
+            self.network_status.setText(f"Autorisation macOS en attente · {value}")
+        elif kind == "ready":
+            self.network_status.setText(f"● Écoute active · {value}")
+            self.status.setText("Changez de carte puis revenez pour synchroniser les PNJ, puis ouvrez un dialogue. Aucun OCR ni enregistrement des paquets.")
+        else:
+            revision, payload = value
+            self.network.deliver(revision, lambda: self.show_network_dialogue(kind, payload))
+
+    def show_network_dialogue(self, kind, value):
+        if kind == "dialogue":
+            self.present_dialogue(value, True, "Réseau : réplique reçue sans OCR")
+        elif kind == "opened":
+            self.npc.setText(f"PNJ : {value}")
+            self.status.setText(f"Dialogue ouvert · {value}")
+        elif kind == "synchronized":
+            self.clear_dialogue()
+            self.status.setText("Carte synchronisée · ouvrez un dialogue PNJ.")
+        elif kind == "closed":
+            self.clear_dialogue()
+        elif kind == "replied":
+            self.last_dialogue = None
+            self.status.setText("Réponse du joueur détectée · lecture précédente annulée.")
+        elif kind == "unsupported":
+            self.clear_dialogue()
+            self.show_error(value)
+
     def refresh_windows(self):
+        self.background(network_clients, self.events.clients.emit)
         self.status.setText("Recherche des fenêtres…")
         self.background(macos.list_windows, self.events.windows.emit)
 
@@ -441,6 +564,7 @@ class MainWindow(QMainWindow):
             self.show_error("Choisissez d’abord une fenêtre, une capture ou la démonstration.")
             return
         self.stop()
+        self.network_mode = False
         self.paused = False
         self.pause_button.setText("Suspendre")
         self.session += 1
@@ -457,19 +581,23 @@ class MainWindow(QMainWindow):
         if self.monitor:
             self.monitor.stop()
             self.monitor = None
+        if self.network:
+            self.network.stop()
+            self.last_dialogue = None
+            self.network_status.setText("Arrêt de l’écoute réseau en cours…")
         self.playback.cancel()
         self.paused = False
         self.pause_button.setText("Suspendre")
         self.status.setText("Arrêté. Aucune ancienne génération ne peut reprendre la lecture.")
 
     def toggle_pause(self):
-        if self.monitor:
+        if self.monitor or self.network:
             self.stop()
             self.paused = True
             self.pause_button.setText("Reprendre")
-            self.status.setText("Suspendu • capture, OCR et audio arrêtés.")
+            self.status.setText("Suspendu · capture et audio arrêtés. Reprendre demandera une nouvelle écoute.")
         else:
-            self.start()
+            self.start_network() if self.network_mode else self.start()
 
     def regions_changed(self):
         if self.auto_regions.isChecked() and self.source_key in self.store.settings.regions:
@@ -507,11 +635,14 @@ class MainWindow(QMainWindow):
     def show_dialogue(self, session, dialogue, fresh, elapsed, revision):
         if session != self.session or self.monitor is None or revision != self.monitor.revision:
             return
+        self.present_dialogue(dialogue, fresh, f"OCR : {elapsed * 1000:.0f} ms")
+
+    def present_dialogue(self, dialogue, fresh, metric):
         self.last_dialogue = dialogue
         self.npc.setText(f"PNJ : {dialogue.npc or 'non reconnu — voix de secours'}")
         self.text.setPlainText(dialogue.text)
         self.responses.setPlainText("\n".join(dialogue.responses))
-        self.metrics.setText(f"OCR : {elapsed * 1000:.0f} ms • synthèse / audio : en attente")
+        self.metrics.setText(metric + " • synthèse / audio : en attente")
         if dialogue.text and self.voices:
             key = self.store.voice_for(dialogue.npc, list(self.voice_map))
             self.voice_combo.blockSignals(True)
