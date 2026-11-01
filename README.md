@@ -35,6 +35,7 @@ Cliquer **Autorisations…**, puis accorder l’accès dans **Réglages Système
 - Aperçu actualisé aux changements des panneaux, texte OCR affiché. Stabilité de 350 ms, dédoublonnage conservateur, réouverture permettant la relecture. Un changement détecté invalide l’ancienne lecture. L’OCR peut se tromper.
 - Raccourcis globaux **Contrôle + Option + F6/F7/F8** : suspendre/reprendre, arrêter, relire. Touches F1–F12 configurables ; Fn peut être nécessaire ; conflits signalés.
 - Démonstration : images **synthétiques**, vrai OCR et vraies voix, changement toutes les 12 s ou bouton suivant. Ce n’est pas un test Dofus en direct.
+- **Captures de test** : accès direct à Kerubim Crépin, Nacf Virgil et Al Etsop. Choisir un PNJ charge sa capture et lance la reconnaissance ; la lecture suit le réglage automatique, sinon cliquer **Lire / Relire**. Ces trois images réelles recadrées sont versionnées dans `tests/fixtures/dialogues/`, sans le chat ni les noms de compte, et replacées sur un fond neutre comme dans les benchmarks. Aucun accès écran nécessaire.
 
 ## Données, tests et limites
 

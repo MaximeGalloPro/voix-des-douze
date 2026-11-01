@@ -43,6 +43,7 @@ Vérifications effectuées :
 - Suspendre coupe capture et audio ; reprendre redémarre la surveillance ; arrêter interrompt le lecteur ; lecture à la demande et relecture exercées.
 - Attribution persistante vérifiée après réouverture du fichier de réglages.
 - Trois raccourcis Carbon globaux enregistrés sans erreur. **La frappe physique des raccourcis dans Dofus n’a pas été testée.**
+- Bouton **Captures de test** : menu natif ouvert et chacune des trois entrées cliquée avec QTest ; noms, dialogues complets et réponses comparés aux transcriptions manuelles des tests OCR. Aperçu sur fond neutre 2048 × 1280, état distinct `test:…` pour les zones manuelles ; fenêtre de 1200 px sans débordement du nouveau bouton. Relecture d’Al Etsop jusqu’au lancement réel d’afplay, puis arrêt vérifié ; aucune écoute humaine. Capture du parcours : `.context/captures-test-ui.png`.
 
 Les workers de surveillance et de synthèse déclarent une activité utilisateur macOS pendant leur travail pour ne pas être traités comme une tâche de fond facultative ; la veille système reste autorisée. Le moteur Swift fait de même pour ses requêtes. L’aperçu n’est régénéré que si les panneaux changent.
 

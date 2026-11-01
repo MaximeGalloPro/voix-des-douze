@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QMessageBox, QPushButton, QSlider, QSplitter, QTextEdit, QVBoxLayout, QWidget)
+    QMenu, QMessageBox, QPushButton, QSlider, QSplitter, QTextEdit, QVBoxLayout, QWidget)
 
 from . import macos
 from .demo import DemoSource, REGIONS, render_slide
@@ -188,16 +188,36 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(QLabel("Lecture locale • Apple Vision français • Piper CPU • aucune action envoyée au jeu"))
         source_box = QGroupBox("1 · Source — une seule fenêtre à la fois")
-        source_layout = QHBoxLayout(source_box)
+        source_rows = QVBoxLayout(source_box)
+        source_layout = QHBoxLayout()
+        source_rows.addLayout(source_layout)
         self.window_combo = QComboBox()
         self.window_combo.addItem("Choisir une fenêtre Dofus…", None)
         self.window_combo.setMinimumWidth(340)
         self.window_combo.currentIndexChanged.connect(self.select_window)
         source_layout.addWidget(self.window_combo, 1)
         self.button(source_layout, "Actualiser", self.refresh_windows)
-        self.button(source_layout, "Ouvrir une capture…", self.open_image)
-        self.button(source_layout, "Démonstration", self.start_demo)
         self.button(source_layout, "Autorisations…", self.permissions)
+        captures = QHBoxLayout()
+        source_rows.addLayout(captures)
+        self.button(captures, "Ouvrir une capture…", self.open_image)
+        test_button = QPushButton("Captures de test")
+        test_button.setToolTip("Captures réelles recadrées : OCR et voix, sans accès écran ni Dofus ouvert.")
+        test_menu = QMenu(test_button)
+        fixtures = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "dialogues"
+        for label, filename, origin in (
+            ("Kerubim Crépin", "kerubim.png", (1290, 370)),
+            ("Nacf Virgil", "nacf.png", (750, 480)),
+            ("Al Etsop", "al.png", (1290, 330)),
+        ):
+            action = test_menu.addAction(label)
+            action.triggered.connect(
+                lambda checked=False, path=fixtures / filename, position=origin:
+                    self.load_image(path, test_origin=position))
+        test_button.setMenu(test_menu)
+        captures.addWidget(test_button)
+        self.button(captures, "Démonstration", self.start_demo)
+        captures.addStretch()
         layout.addWidget(source_box)
         control = QHBoxLayout()
         self.start_button = self.button(control, "Démarrer", self.start)
@@ -371,18 +391,28 @@ class MainWindow(QMainWindow):
         if path:
             self.load_image(Path(path))
 
-    def load_image(self, path):
+    def load_image(self, path, *, test_origin=None):
         try:
             with Image.open(path) as raw:
                 image = raw.convert("RGB")
+            if test_origin is not None:
+                # Same neutral canvas as the OCR benchmarks; private chat and
+                # account names remain excluded from the repository fixtures.
+                canvas = Image.new("RGB", (2048, 1280))
+                canvas.paste(image, test_origin)
+                canvas.info.update(image.info)
+                image = canvas
             self.stop()
             self.clear_dialogue()
             self.demo = None
             self.source = lambda: image.copy()
-            self.source_key = f"image:{Path(path).resolve()}"
+            self.source_key = f"test:{Path(path).stem}" if test_origin is not None else f"image:{Path(path).resolve()}"
             self.restore_regions()
             self.start()
-            self.status.setText("Capture fixe réelle — ce mode ne constitue pas un test Dofus en direct.")
+            self.status.setText(
+                f"Capture de test : {Path(path).stem} — image réelle recadrée, pas de Dofus en direct."
+                if test_origin is not None else
+                "Capture fixe réelle — ce mode ne constitue pas un test Dofus en direct.")
         except (OSError, ValueError) as exc:
             self.show_error(str(exc))
 
