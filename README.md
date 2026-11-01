@@ -23,6 +23,12 @@ Prérequis : macOS 14+, **Python 3.13**, et Python système des Command Line Too
 
 Après préparation, l’application ne télécharge rien pour démarrer l’écoute ou produire la voix. Le jeu lui-même nécessite sa connexion habituelle. Aucun historique de paquets ou de dialogues n’est enregistré par l’application et rien n’est envoyé à un serveur communautaire.
 
+### Raccourci dans le Dock
+
+Après installation, exécuter `.venv/bin/python scripts/install_dock.py`. Ce script crée **`~/Applications/Voix des Douze.app`** et l’épingle au Dock, sans Terminal, sudo ou service permanent. Les autres icônes et leur ordre sont conservés ; relancer le script ne crée pas de doublon. Une sauvegarde initiale du Dock est conservée dans `~/Library/Application Support/VoixDesDouze/dock-before-shortcut.plist`.
+
+Le lanceur utilise le venv et le code de ce dossier : ce n’est pas une distribution autonome. Garder le dossier du projet en place ; après déplacement, recréer le raccourci depuis son nouvel emplacement. Le lancement affiche l’application mais ne démarre pas l’écoute réseau.
+
 ## Contrôles et limites
 
 - **Ce PNJ** : attribution automatique mémorisée, modifiable ; **Par défaut**, **Préécouter**, volume et vitesse 0,5×–2×. Siwis, deux locuteurs MLS et Tom disponibles. La qualité perceptive reste à apprécier en écoutant les voix.
