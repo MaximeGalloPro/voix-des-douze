@@ -9,7 +9,7 @@ Projet indépendant d’Ankama et de Romandub, sans affiliation ou approbation s
 Prérequis : macOS 14+, **Python 3.13**, et Python système des Command Line Tools Apple (`xcode-select --install` si nécessaire). Testé sur M4 / 32 Go / macOS 26.5.2. Aucune compilation Swift ni permission d’enregistrement d’écran.
 
 1. Double-cliquer **`Installer.command`** : crée le venv isolé et prépare les modèles français (~203 Mo), versions et SHA256 figés. Aucun paquet Python global ni élévation pendant l’installation.
-2. Double-cliquer **`Lancer.command`**. Au premier usage, cliquer **Préparer les textes (~90 Mo)** : téléchargement explicite des données françaises de la version vérifiée. Préparation reproductible par `scripts/prepare_network.py`.
+2. Double-cliquer **`Lancer.command`**. Au premier usage, cliquer **Préparer les données (~90 Mo)** : téléchargement explicite des textes français et métadonnées PNJ de la version vérifiée. Préparation reproductible par `scripts/prepare_network.py`.
 3. Ouvrir Dofus, **Actualiser**, choisir son client (PID), puis **Démarrer l’écoute**. Seule la capture demande une autorisation administrateur **dans la fenêtre macOS**, jamais dans la conversation ni dans l’application.
 4. **Changer de carte puis revenir** pour synchroniser les PNJ, puis ouvrir un dialogue. La première réplique et les suivantes sont affichées et lues automatiquement. Répondre invalide immédiatement l’ancienne lecture.
 5. **Arrêter** coupe la capture et la voix ; fermer l’application fait de même. Aucun service permanent ni démarrage automatique avec le Mac.
@@ -45,6 +45,10 @@ Le lanceur utilise le venv et le code de ce dossier : ce n’est pas une distrib
 Réglages : `~/Library/Application Support/VoixDesDouze/settings.json`. La migration retire les anciennes zones/options de réponses tout en conservant les voix, le volume, la vitesse et les raccourcis ; l’original est conservé dans `settings-before-network.json` avant écriture. Une configuration illisible n’est pas écrasée.
 
 Modèles : `~/Library/Caches/VoixDesDouze/models/`. Catalogue et sources vérifiées : `~/Library/Caches/VoixDesDouze/network/3.7.12.12/`. Les garder pour l’usage hors ligne. Provenance et empreintes dans `models/manifest.json` et `models/network.json` ; aucun modèle ni catalogue binaire dans Git.
+
+Le catalogue `catalog.json` (schéma 2) conserve les **fiches PNJ complètes, indexées par identifiant**, et leur nom français : `gender` brut, `look`, dialogues/réponses, actions, animations, `moodId` et autres champs source. Les homonymes restent distincts dans les métadonnées. Les codes de genre ne sont pas encore traduits en catégories vocales ; aucune catégorie humain/gobelin/Énutrof/Écaflip n’est déduite arbitrairement. L’attribution des voix reste inchangée, par nom.
+
+La préparation migre uniquement un ancien catalogue strictement identique aux sources vérifiées et le sauvegarde dans `catalog-before-metadata.json` ; un catalogue personnalisé différent est laissé intact. Les sources déjà présentes et vérifiées sont réutilisées sans téléchargement. Après mise à jour du logiciel, quitter puis relancer l’application depuis le Dock pour charger le nouveau schéma.
 
 La version OCR, ses captures, ses tests et son ancien rapport sont conservés sur **`archive/ocr-before-network`**, commit `ebdcabe`, poussée sur GitHub avant le nettoyage. `master` ne contient plus ce mode.
 

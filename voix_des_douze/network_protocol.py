@@ -16,6 +16,7 @@ from typing import Callable
 from .dialogue import Dialogue
 
 VERSION = "3.7.12.12"
+CATALOG_SCHEMA = 2
 MAX_FRAME = 1_000_000
 
 
@@ -29,7 +30,7 @@ def data_directory() -> Path:
 
 @dataclass(frozen=True)
 class Catalog:
-    names: dict[str, str]
+    npcs: dict[str, dict]
     texts: dict[str, dict]
 
     @classmethod
@@ -38,9 +39,10 @@ class Catalog:
         if not path.exists():
             raise ProtocolError("Préparez d’abord les données réseau avec le bouton dédié.")
         raw = json.loads(path.read_text(encoding="utf-8"))
-        if raw.get("version") != VERSION or not isinstance(raw.get("names"), dict) or not isinstance(raw.get("texts"), dict):
+        if (raw.get("version") != VERSION or raw.get("schema") != CATALOG_SCHEMA
+                or not isinstance(raw.get("npcs"), dict) or not isinstance(raw.get("texts"), dict)):
             raise ProtocolError("Catalogue réseau incompatible ; préparez de nouveau les données.")
-        return cls(raw["names"], raw["texts"])
+        return cls(raw["npcs"], raw["texts"])
 
 
 def varint(data, position=0):
@@ -164,7 +166,7 @@ class Conversation:
             self.closed()
             entity = integer(body, 5)
             template = self.entities.get(signed(entity)) if entity is not None and integer(body, 3) == self.map_id else None
-            self.npc = self.catalog.names.get(str(template), "")
+            self.npc = self.catalog.npcs.get(str(template), {}).get("name") or ""
             if not self.npc:
                 self.emit("unsupported", "PNJ non synchronisé : changez de carte puis revenez avant d’ouvrir le dialogue.")
                 return

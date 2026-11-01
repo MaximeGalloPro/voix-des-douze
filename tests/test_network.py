@@ -42,7 +42,7 @@ def opened(map_id=100):
 
 def make_conversation():
     events = []
-    catalog = Catalog({"59": "Bûcheron", "60": "Banquière"}, {
+    catalog = Catalog({"59": {"id": 59, "name": "Bûcheron"}, "60": {"id": 60, "name": "Banquière"}}, {
         "33": {"text": "Bonjour, voyageur.", "params": []},
         "34": {"text": "Votre compte contient 12 kamas.", "params": []},
         "35": {"text": "Bonjour #1.", "params": ["PN"]},

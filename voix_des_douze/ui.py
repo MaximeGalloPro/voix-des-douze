@@ -78,8 +78,8 @@ class MainWindow(QMainWindow):
         self.client_combo.addItem("Ouvrez Dofus puis actualisez…", None)
         row.addWidget(self.client_combo, 1)
         self.button(row, "Actualiser", self.refresh_clients)
-        self.prepare_button = self.button(row, "Préparer les textes (~90 Mo)", self.prepare_data)
-        self.prepare_button.setToolTip("Téléchargement explicite des textes français vérifiés ; rien n’est téléchargé au lancement de l’écoute.")
+        self.prepare_button = self.button(row, "Préparer les données (~90 Mo)", self.prepare_data)
+        self.prepare_button.setToolTip("Téléchargement explicite des textes et métadonnées PNJ vérifiés ; rien n’est téléchargé au lancement de l’écoute.")
         rows.addLayout(row)
         control = QHBoxLayout()
         self.start_button = self.button(control, "Démarrer l’écoute", self.start)
@@ -205,7 +205,7 @@ class MainWindow(QMainWindow):
                 script = Path(__file__).resolve().parents[1] / "scripts/prepare_network.py"
                 result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=300)
                 success = result.returncode == 0
-                message = "Textes préparés. Vous pouvez démarrer l’écoute." if success else result.stderr[-1200:]
+                message = "Textes et métadonnées PNJ préparés. Vous pouvez démarrer l’écoute." if success else result.stderr[-1200:]
             except Exception as exc:
                 success, message = False, str(exc)
             if not self.shutting_down:

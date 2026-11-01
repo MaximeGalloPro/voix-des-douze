@@ -10,8 +10,8 @@ import sys
 import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from voix_des_douze.network_protocol import Catalog, VERSION, data_directory
-from prepare_models import download, verified
+from voix_des_douze.network_protocol import CATALOG_SCHEMA, Catalog, VERSION, data_directory
+from scripts.prepare_models import download, verified
 
 MANIFEST = Path(__file__).resolve().parents[1] / "models/network.json"
 
@@ -32,22 +32,32 @@ def prepare(directory: Path, verify_only=False):
     for item in manifest["files"]:
         download(f"{base}/{item['source']}", directory / item["source"], item)
     translations = json.loads((directory / "i18n_fr.json").read_text(encoding="utf-8"))
-    npcs = json.loads((directory / "npcsdata.json").read_text(encoding="utf-8"))
-    names = {str(row["data"]["id"]): translations[str(row["data"]["nameId"])]
-             for row in npcs["references"]["RefIds"] if row["type"]["class"] == "NpcData"
-             and str(row["data"]["nameId"]) in translations}
-    del npcs
+    source_npcs = json.loads((directory / "npcsdata.json").read_text(encoding="utf-8"))
+    npcs = {str(row["data"]["id"]): {
+        **row["data"], "name": translations.get(str(row["data"]["nameId"]))}
+        for row in source_npcs["references"]["RefIds"] if row["type"]["class"] == "NpcData"}
+    names = {key: npc["name"] for key, npc in npcs.items() if npc["name"] is not None}
+    del source_npcs
     messages = json.loads((directory / "npcmessagesdata.json").read_text(encoding="utf-8"))
     texts = {str(row["data"]["id"]): {"text": translations[str(row["data"]["messageId"])],
                                     "params": row["data"]["messageParams"]["Array"]}
              for row in messages["references"]["RefIds"] if row["type"]["class"] == "NpcMessageData"
              and str(row["data"]["messageId"]) in translations}
     target = directory / "catalog.json"
-    raw = {"version": VERSION, "source": f"{manifest['repository']}@{manifest['release']}", "names": names, "texts": texts}
-    if target.exists():
-        if json.loads(target.read_text(encoding="utf-8")) != raw:
+    source = f"{manifest['repository']}@{manifest['release']}"
+    raw = {"schema": CATALOG_SCHEMA, "version": VERSION, "source": source, "npcs": npcs, "texts": texts}
+    existing = json.loads(target.read_text(encoding="utf-8")) if target.exists() else None
+    if existing is not None and existing != raw:
+        legacy = {"version": VERSION, "source": source, "names": names, "texts": texts}
+        if existing != legacy:
             raise RuntimeError(f"Catalogue existant différent, laissé intact : {target}. Déplacez-le avant de relancer.")
-    else:
+        backup = directory / "catalog-before-metadata.json"
+        try:
+            with backup.open("xb") as stream:
+                stream.write(target.read_bytes())
+        except FileExistsError:
+            pass
+    if existing != raw:
         fd, temporary = tempfile.mkstemp(prefix="catalog-", dir=directory)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
@@ -57,7 +67,7 @@ def prepare(directory: Path, verify_only=False):
             os.replace(temporary, target)
         finally:
             Path(temporary).unlink(missing_ok=True)
-    print(f"Dofus {VERSION} : {len(names)} noms, {len(texts)} répliques françaises. Données Ankama ; source communautaire, sans approbation supposée.")
+    print(f"Dofus {VERSION} : {len(npcs)} fiches PNJ complètes, {len(names)} noms, {len(texts)} répliques françaises. Données Ankama ; source communautaire, sans approbation supposée.")
 
 
 if __name__ == "__main__":

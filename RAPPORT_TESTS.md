@@ -66,3 +66,11 @@ L’accès BPF est refusé avec les droits utilisateur ordinaires sur cette mach
 - compatibilité contractuelle et droits de redistribution à clarifier avec Ankama avant diffusion. Une capture passive n’est pas une autorisation de l’éditeur.
 
 Les WAV et rapports vocaux de `samples/` restent des échantillons de synthèse locale. Aucun serveur communautaire, vote, upload, clonage vocal ou contact avec Ankama/Romandub n’a été mis en place.
+
+## Ajout des métadonnées PNJ
+
+Le catalogue a été migré vers le schéma 2 sur les sources réelles déjà présentes, avec connexions Python interdites pendant tout le smoke : **6 472 fiches complètes / 6 472 noms / 55 127 répliques**. Chaque champ de chaque fiche conservée a été comparé à sa source. Codes `gender` observés : 0 pour 4 510 fiches, 1 pour 1 587, 2 pour 375 ; aucune signification féminin/masculin n’a été supposée. Exemple : Agride Shakoku, identifiant 59, `gender: 0`, `look: "{6191}"`.
+
+L’ancien catalogue a été sauvegardé avant remplacement atomique. Le rejeu hors ligne de la capture Dofus antérieure identifie toujours Agride et sa première réplique. Le fichier des réglages/attributions de voix est identique avant et après cette opération. Catalogue et sources vérifiés ensuite avec `--verify-only`. Aucun nouvel essai en jeu ni changement automatique de voix fondé sur ces métadonnées.
+
+Suite exécutée : **25 tests réussis, 1 échec, en 5,72 s**. Les deux nouveaux tests vérifient la migration avec sauvegarde, les homonymes par identifiant, les PNJ sans traduction, les codes inconnus conservés, la préparation répétée sans modification et le refus d’écraser un catalogue personnalisé. L’échec concerne `test_real_speed_changes_audio_duration` : 4,5395 s à vitesse 0,5 contre 1,8692 s à vitesse 2, sous le rapport minimal de 2,5 attendu par ce test. Le moteur de synthèse et ce test n’ont pas été modifiés ; l’échec est signalé, pas masqué par un ajustement du seuil.
