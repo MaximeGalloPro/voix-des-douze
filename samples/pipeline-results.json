@@ -1,0 +1,171 @@
+{
+  "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "python": "3.13.8",
+  "source": "Recadrages réels fournis par l'utilisateur, replacés sur un fond neutre 2048×1280.",
+  "limits": [
+    "Pas de capture de fenêtre en direct.",
+    "Pas d'écoute humaine.",
+    "Froid : premier appel du processus, binaire Swift déjà compilé, cache disque non vidé.",
+    "Afplay : horodatage du lancement du processus, pas du premier son matériel.",
+    "Délai de stabilité de 350 ms et cadence de capture exclus du benchmark direct."
+  ],
+  "cases": [
+    {
+      "fixture": "kerubim",
+      "runs": [
+        {
+          "first_vision_call": true,
+          "detection_s": 0.11396766698453575,
+          "ocr_s": 1.0959619999630377,
+          "speech_first_pcm_s": 0.345819209003821,
+          "image_to_first_pcm_s": 1.5573954998981208,
+          "image_to_afplay_launch_s": 1.5942989169852808,
+          "speech_total_including_play_probe_s": 3.2904667500406504,
+          "audio_duration_s": 18.657233560090702
+        },
+        {
+          "first_vision_call": false,
+          "detection_s": 0.16094245808199048,
+          "ocr_s": 0.5736187499715015,
+          "speech_first_pcm_s": 0.33537091698963195,
+          "image_to_first_pcm_s": 1.0700577080715448,
+          "image_to_afplay_launch_s": 1.0915081250714138,
+          "speech_total_including_play_probe_s": 3.0902526669669896,
+          "audio_duration_s": 18.959092970521542
+        },
+        {
+          "first_vision_call": false,
+          "detection_s": 0.17954720801208168,
+          "ocr_s": 0.6852565000299364,
+          "speech_first_pcm_s": 0.35532654100097716,
+          "image_to_first_pcm_s": 1.2201889579882845,
+          "image_to_afplay_launch_s": 1.242258624988608,
+          "speech_total_including_play_probe_s": 3.044844915973954,
+          "audio_duration_s": 18.819773242630387
+        },
+        {
+          "first_vision_call": false,
+          "detection_s": 0.16666604101192206,
+          "ocr_s": 0.7521619159961119,
+          "speech_first_pcm_s": 0.4221753340680152,
+          "image_to_first_pcm_s": 1.34103683300782,
+          "image_to_afplay_launch_s": 1.3669817910995334,
+          "speech_total_including_play_probe_s": 2.8776527090230957,
+          "audio_duration_s": 18.506303854875284
+        }
+      ],
+      "npc": "Kerubim Crépin",
+      "voice": "fr_FR-siwis-medium:0",
+      "responses": [
+        "En savoir plus sur Ecaflipus.",
+        "Dire que vous feriez bien un petit donjon.",
+        "Montrer un objet magique.",
+        "S'en aller."
+      ]
+    },
+    {
+      "fixture": "nacf",
+      "runs": [
+        {
+          "first_vision_call": false,
+          "detection_s": 0.1391981670167297,
+          "ocr_s": 0.46786120801698416,
+          "speech_first_pcm_s": 0.6468720830744132,
+          "image_to_first_pcm_s": 1.2554842500248924,
+          "image_to_afplay_launch_s": 1.2817184169543907,
+          "speech_total_including_play_probe_s": 2.4151367080630735,
+          "audio_duration_s": 13.003174603174603
+        },
+        {
+          "first_vision_call": false,
+          "detection_s": 0.14360033406410366,
+          "ocr_s": 0.45900924992747605,
+          "speech_first_pcm_s": 0.5799695829628035,
+          "image_to_first_pcm_s": 1.1826295420760289,
+          "image_to_afplay_launch_s": 1.2044861670583487,
+          "speech_total_including_play_probe_s": 2.1021967499982566,
+          "audio_duration_s": 14.698231292517006
+        },
+        {
+          "first_vision_call": false,
+          "detection_s": 0.13043512497097254,
+          "ocr_s": 0.5862084589898586,
+          "speech_first_pcm_s": 0.638957791030407,
+          "image_to_first_pcm_s": 1.3556522079743445,
+          "image_to_afplay_launch_s": 1.3836517499294132,
+          "speech_total_including_play_probe_s": 2.3128369160695,
+          "audio_duration_s": 14.036462585034013
+        },
+        {
+          "first_vision_call": false,
+          "detection_s": 0.15238850004971027,
+          "ocr_s": 0.43246508308220655,
+          "speech_first_pcm_s": 0.4671704169595614,
+          "image_to_first_pcm_s": 1.052072292077355,
+          "image_to_afplay_launch_s": 1.0717192080337554,
+          "speech_total_including_play_probe_s": 1.9705580830341205,
+          "audio_duration_s": 13.444353741496599
+        }
+      ],
+      "npc": "Nacf Virgil",
+      "voice": "fr_FR-mls-medium:0",
+      "responses": [
+        "S'en aller."
+      ]
+    },
+    {
+      "fixture": "al",
+      "runs": [
+        {
+          "first_vision_call": false,
+          "detection_s": 0.14574812492355704,
+          "ocr_s": 0.4805102919926867,
+          "speech_first_pcm_s": 0.7470346249174327,
+          "image_to_first_pcm_s": 1.3744509170064703,
+          "image_to_afplay_launch_s": 1.3947330840164796,
+          "speech_total_including_play_probe_s": 2.5913997089955956,
+          "audio_duration_s": 15.209070294784581
+        },
+        {
+          "first_vision_call": false,
+          "detection_s": 0.1203871249454096,
+          "ocr_s": 0.5171282090013847,
+          "speech_first_pcm_s": 1.134637500043027,
+          "image_to_first_pcm_s": 1.772220041952096,
+          "image_to_afplay_launch_s": 1.7912384999217466,
+          "speech_total_including_play_probe_s": 3.2111949999816716,
+          "audio_duration_s": 17.670385487528343
+        },
+        {
+          "first_vision_call": false,
+          "detection_s": 0.12923899991437793,
+          "ocr_s": 0.5734818750061095,
+          "speech_first_pcm_s": 0.6771027920767665,
+          "image_to_first_pcm_s": 1.3798728339606896,
+          "image_to_afplay_launch_s": 1.3913750419160351,
+          "speech_total_including_play_probe_s": 2.3489724580431357,
+          "audio_duration_s": 16.172698412698413
+        },
+        {
+          "first_vision_call": false,
+          "detection_s": 0.11151366599369794,
+          "ocr_s": 0.5200736250262707,
+          "speech_first_pcm_s": 0.8636291669681668,
+          "image_to_first_pcm_s": 1.4952665410237387,
+          "image_to_afplay_launch_s": 1.5148920830106363,
+          "speech_total_including_play_probe_s": 2.746335917036049,
+          "audio_duration_s": 15.522539682539684
+        }
+      ],
+      "npc": "Al Etsop",
+      "voice": "fr_FR-mls-medium:1",
+      "responses": [
+        "Consulter son coffre personnel.",
+        "Se renseigner sur les modalités d'ouverture d'un compte en banque."
+      ]
+    }
+  ],
+  "screen_permission": false,
+  "native_start_s": 0.03869866591412574,
+  "piper_warmup_s": 10.994584584026597
+}

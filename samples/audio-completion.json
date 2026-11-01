@@ -1,0 +1,40 @@
+{
+  "command": "scripts/check_audio.py --volume 0.15",
+  "human_listening": false,
+  "hardware_loopback_recording": false,
+  "limit": "Fin normale des processus et durée cohérente, sans preuve du son effectivement audible.",
+  "files": [
+    {
+      "file": "fr_FR-mls-medium-0.wav",
+      "wav_duration_s": 7.116916099773243,
+      "afplay_elapsed_s": 7.935420708032325,
+      "exit_code": 0,
+      "stderr": "",
+      "played_through_process": true
+    },
+    {
+      "file": "fr_FR-mls-medium-1.wav",
+      "wav_duration_s": 9.671111111111111,
+      "afplay_elapsed_s": 10.47733070794493,
+      "exit_code": 0,
+      "stderr": "",
+      "played_through_process": true
+    },
+    {
+      "file": "fr_FR-siwis-medium-0.wav",
+      "wav_duration_s": 3.81968253968254,
+      "afplay_elapsed_s": 4.137691083014943,
+      "exit_code": 0,
+      "stderr": "",
+      "played_through_process": true
+    },
+    {
+      "file": "fr_FR-tom-medium-0.wav",
+      "wav_duration_s": 4.243446712018141,
+      "afplay_elapsed_s": 4.642527458956465,
+      "exit_code": 0,
+      "stderr": "",
+      "played_through_process": true
+    }
+  ]
+}

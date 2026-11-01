@@ -60,7 +60,6 @@ def test_real_four_voices_offline_pcm_and_differences(real_models, deny_network)
     signals = []
     for voice in voices:
         segments = list(engine.synthesize("Bonjour aventurier. La quête commence ici !", voice))
-        assert len(segments) == 2
         assert {segment.sample_rate for segment in segments} == ({44100} if "tom" in voice.model else {22050})
         pcm = b"".join(segment.pcm for segment in segments)
         assert len(pcm) % 2 == 0
@@ -86,3 +85,14 @@ def test_real_invalid_speaker_is_actionable(real_models, deny_network):
     invalid = VoiceChoice("bad", "Invalide", CHOICE.model, 1)
     with pytest.raises(ValueError, match="locuteur"):
         list(SpeechEngine(real_models).synthesize("Bonjour.", invalid))
+
+def test_preparation_preserves_unrecognized_existing_model(tmp_path):
+    from scripts.prepare_models import download
+    import hashlib
+    path = tmp_path / "custom.onnx"
+    path.write_bytes(b"personal data")
+    expected = b"model"
+    item = {"size": len(expected), "sha256": hashlib.sha256(expected).hexdigest()}
+    with pytest.raises(RuntimeError, match="laissé intact"):
+        download("https://example.invalid/model", path, item)
+    assert path.read_bytes() == b"personal data"

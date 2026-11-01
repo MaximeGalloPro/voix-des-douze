@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store
+.context/
+.locagent-attachments/
+models/*.onnx
+models/*.onnx.json
+build/

@@ -24,6 +24,8 @@ struct EngineFailure: Error { let code: String; let message: String }
     }
 
     static func execute(_ input: [String: Any]) async throws -> Any {
+        let activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Capture et lecture OCR demandées par l’utilisateur")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
         switch input["op"] as? String {
         case "permission": return CGPreflightScreenCaptureAccess()
         case "request_permission": return CGRequestScreenCaptureAccess()

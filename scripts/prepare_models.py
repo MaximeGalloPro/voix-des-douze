@@ -31,6 +31,8 @@ def download(url: str, path: Path, item: dict) -> None:
     if verified(path, item):
         print(f"Vérifié : {path.name}")
         return
+    if path.exists():
+        raise RuntimeError(f"Fichier existant non conforme, laissé intact : {path}. Déplacez-le avant de relancer.")
     partial = path.with_name(path.name + ".part")
     offset = partial.stat().st_size if partial.exists() else 0
     if offset and verified(partial, item):
