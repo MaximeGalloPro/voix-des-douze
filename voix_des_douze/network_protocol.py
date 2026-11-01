@@ -13,7 +13,7 @@ import re
 import struct
 from typing import Callable
 
-from .vision import Dialogue
+from .dialogue import Dialogue
 
 VERSION = "3.7.12.12"
 MAX_FRAME = 1_000_000

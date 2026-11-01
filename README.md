@@ -1,66 +1,56 @@
 # Voix des Douze
 
-Application **macOS locale** : une fenêtre Dofus choisie → OCR Apple Vision français → voix Piper CPU persistante par PNJ. Sans LLM, compte, API payante, modification du client, interception réseau ou automatisation du jeu. Projet indépendant d’Ankama et de Romandub ; aucun enregistrement de ces créateurs n’est utilisé.
+Application **macOS locale** : événements du client Dofus choisi → nom et texte du PNJ → voix françaises Piper CPU, mémorisées par personnage. Aucun OCR, capture d’écran, LLM, compte ou API payante. Aucun proxy, modification du client ou envoi d’action au jeu.
 
-## Priorité actuelle et perspective
-
-**Objectif immédiat :** détecter l’ouverture d’un dialogue dans la seule fenêtre Dofus choisie, identifier le PNJ et récupérer le texte de sa réplique. La piste réseau passive n’est pas intégrée à l’application ; une preuve ponctuelle a été obtenue sur une session réelle de Dofus 3.7.12.12 : 149 paquets capturés, une ouverture de dialogue et cinq répliques d’Agride Shakoku résolues sans OCR. La capture a nécessité une autorisation administrateur ponctuelle, expressément accordée, sans modifier durablement les permissions. L’analyse a été faite après capture, avec des correspondances statiques inspectées manuellement dans la [publication communautaire correspondant à cette version](https://github.com/ledouxm/dofus-sqlite/releases/tag/v6.0_3.7.12.12) : ce n’est pas encore un détecteur générique en direct. Aucun proxy, envoi d’action au jeu ou changement du client. Les paquets restent locaux, hors Git. La base OCR reste disponible.
-
-**Exercice vocal en direct ensuite réalisé :** ouverture du dialogue d’Agride Shakoku → résolution de la première réplique sans OCR → lancement réel d’afplay avec Piper/Siwis environ 1,28 s après la détection réseau. L’utilisateur a confirmé entendre la lecture. Une réponse du joueur a également été détectée et a invalidé la lecture en cours. Cet essai borné utilisait un catalogue local de noms et de répliques de la version 3.7.12.12 ; il ne constitue pas encore une intégration dans l’interface ni une validation des autres PNJ ou dialogues paramétrés. L’écoute a été arrêtée à la fin du test.
-
-**Perspective à long terme, hors du travail immédiat :** proposer à Ankama un produit local autonome avec voix de base et choix personnel des voix par PNJ, accompagné d’un service communautaire. Les joueurs pourraient prévisualiser et valider l’envoi du texte et de l’audio, y compris des enregistrements humains autorisés, vers un serveur distant. Une interface web permettrait de voter positivement ou négativement pour les voix associées aux PNJ et d’en proposer les mieux classées par défaut, sans écraser les choix personnels. Le lecteur local resterait utilisable hors ligne après préparation ; les contributions et mises à jour communautaires nécessiteraient une connexion.
-
-Cette perspective n’est pas implémentée et n’implique aucune affiliation ou approbation d’Ankama. Aucun clonage vocal n’est autorisé ; les droits des contributeurs, les autorisations relatives aux textes et les modalités de modération restent à définir avant publication du service.
+Projet indépendant d’Ankama et de Romandub, sans affiliation ou approbation supposée. La lecture passive du réseau ne vaut pas autorisation d’Ankama ; sa compatibilité contractuelle doit être clarifiée avant diffusion communautaire.
 
 ## Installer et lancer
 
-Prérequis : macOS 14+, **Python 3.13** et outils Apple Command Line Tools (`xcode-select --install` si absents). Testé sur M4 / 32 Go / macOS 26.5.2 / Python 3.13.8. Windows hors périmètre.
+Prérequis : macOS 14+, **Python 3.13**, et Python système des Command Line Tools Apple (`xcode-select --install` si nécessaire). Testé sur M4 / 32 Go / macOS 26.5.2. Aucune compilation Swift ni permission d’enregistrement d’écran.
 
-1. Double-cliquer **`Installer.command`** : crée `.venv`, installe les versions de `requirements.lock`, télécharge trois modèles français (~203 Mo), vérifie SHA256/licences et compile le moteur Swift. Aucun sudo ou paquet Python global. Installation relançable ; un modèle existant non conforme reste intact.
-2. Double-cliquer **`Lancer.command`** : vraie interface PySide6 native, pas une page web. Aucun téléchargement au lancement ; préchauffage des modèles dans un worker, pendant plusieurs secondes.
-3. Choisir une fenêtre puis **Démarrer**. Une seule source est surveillée, même en arrière-plan si macOS permet sa capture.
+1. Double-cliquer **`Installer.command`** : crée le venv isolé et prépare les modèles français (~203 Mo), versions et SHA256 figés. Aucun paquet Python global ni élévation pendant l’installation.
+2. Double-cliquer **`Lancer.command`**. Au premier usage, cliquer **Préparer les textes (~90 Mo)** : téléchargement explicite des données françaises de la version vérifiée. Préparation reproductible par `scripts/prepare_network.py`.
+3. Ouvrir Dofus, **Actualiser**, choisir son client (PID), puis **Démarrer l’écoute**. Seule la capture demande une autorisation administrateur **dans la fenêtre macOS**, jamais dans la conversation ni dans l’application.
+4. **Changer de carte puis revenir** pour synchroniser les PNJ, puis ouvrir un dialogue. La première réplique et les suivantes sont affichées et lues automatiquement. Répondre invalide immédiatement l’ancienne lecture.
+5. **Arrêter** coupe la capture et la voix ; fermer l’application fait de même. Aucun service permanent ni démarrage automatique avec le Mac.
 
 ```sh
 ./Installer.command
+.venv/bin/python scripts/prepare_network.py
 ./Lancer.command
-./Lancer.command --demo
-./Lancer.command --image /chemin/capture.png
 ./Tester.command
 ```
 
-Si Python n’est pas trouvé : `PYTHON=/chemin/python3.13 ./Installer.command` lors de la première installation. Ne pas déplacer `.venv` seul ; relancer l’installation après déplacement du projet.
+Après préparation, l’application ne télécharge rien pour démarrer l’écoute ou produire la voix. Le jeu lui-même nécessite sa connexion habituelle. Aucun historique de paquets ou de dialogues n’est enregistré par l’application et rien n’est envoyé à un serveur communautaire.
 
-## Permission macOS
+## Contrôles et limites
 
-Cliquer **Autorisations…**, puis accorder l’accès dans **Réglages Système → Confidentialité et sécurité → Enregistrement de l’écran et de l’audio système**, à l’entrée présentée par macOS (application hôte ou moteur `engine-…`). Relancer ensuite et actualiser les fenêtres. Le moteur est dans `~/Library/Caches/VoixDesDouze/` ; Finder → Aller au dossier permet de le sélectionner si nécessaire.
+- **Ce PNJ** : attribution automatique mémorisée, modifiable ; **Par défaut**, **Préécouter**, volume et vitesse 0,5×–2×. Siwis, deux locuteurs MLS et Tom disponibles. La qualité perceptive reste à apprécier en écoutant les voix.
+- Décocher **Lecture automatique** pour afficher sans parler, puis **Lire / Relire**. Suspendre coupe l’écoute et la voix ; reprendre ouvre une nouvelle session et nécessite de resynchroniser la carte.
+- Raccourcis globaux **Contrôle + Option + F6/F7/F8** : suspendre/reprendre, arrêter, relire ; touches configurables, Fn parfois nécessaire. Aucune frappe de jeu n’est observée ou automatisée.
+- Mode expérimental limité à **Dofus 3.7.12.12**, connexion de jeu IPv4/TCP 5555 et capture Ethernet/Wi-Fi. Le build du processus choisi est vérifié dans son journal de démarrage ; une version différente est refusée.
+- Les dialogues à paramètres ne sont pas encore résolus : un message explicite remplace la lecture, jamais un texte approximatif. Les choix du joueur sont détectés, mais leur texte n’est pas affiché ou lu.
+- Le client choisi correspond à un processus et à son flux réseau, pas à une zone d’écran. L’isolation entre deux connexions est testée ; plusieurs comptes réels simultanés restent à valider. Le plein écran et le déplacement des panneaux n’interviennent plus dans la détection.
+- Si le jeu se reconnecte ou si son flux change, l’écoute s’arrête : la relancer explicitement, puis resynchroniser la carte. Un catalogue correspondant au numéro de version ne garantit pas à lui seul que les clés obfusquées resteront stables après une mise à jour.
+- Pas encore de mesure prolongée CPU/mémoire/autonomie. Les résultats effectivement observés sont dans **`RAPPORT_TESTS.md`**.
 
-**L’accès écran est actuellement refusé sur la machine de validation.** Images fixes et démonstration fonctionnent sans cette permission. Plein écran, arrière-plan, multi-fenêtres et redimensionnement Retina sont implémentés mais restent à valider en jeu réel. Aucun accès micro. Les raccourcis Carbon ne surveillent pas les frappes et ne demandent pas Accessibilité.
+## Données et sauvegarde OCR
 
-## Utiliser
+Réglages : `~/Library/Application Support/VoixDesDouze/settings.json`. La migration retire les anciennes zones/options de réponses tout en conservant les voix, le volume, la vitesse et les raccourcis ; l’original est conservé dans `settings-before-network.json` avant écriture. Une configuration illisible n’est pas écrasée.
 
-- Lecture **automatique** par défaut ; décocher pour reconnaître sans parler, puis **Lire / Relire**. Suspendre coupe capture et audio ; arrêter invalide aussi les générations en attente.
-- Attribution automatique mémorisée, ajustable par PNJ, voix de secours si le nom manque. Quatre choix : **Siwis**, **MLS 1840** (index 0), **MLS 3698** (index 1), **Tom**. Utiliser **Préécouter** : plusieurs signaux distincts ne garantissent pas une bonne qualité perceptive. Volume et vitesse 0,5×–2× réglables.
-- Réponses reconnues séparément ; lecture désactivée par défaut, avec voix distincte si activée.
-- Repérage automatique des panneaux mobiles du thème bleu nuit à cartouche beige des captures fournies. Autres rendus : **Délimiter les zones…**, puis tracer nom/dialogue/réponses. Rectangles relatifs à la fenêtre ; ils suivent son échelle, pas le déplacement d’une bulle. Recocher le repérage automatique supprime les zones manuelles de cette source.
-- Aperçu actualisé aux changements des panneaux, texte OCR affiché. Stabilité de 350 ms, dédoublonnage conservateur, réouverture permettant la relecture. Un changement détecté invalide l’ancienne lecture. L’OCR peut se tromper.
-- Raccourcis globaux **Contrôle + Option + F6/F7/F8** : suspendre/reprendre, arrêter, relire. Touches F1–F12 configurables ; Fn peut être nécessaire ; conflits signalés.
-- Démonstration : images **synthétiques**, vrai OCR et vraies voix, changement toutes les 12 s ou bouton suivant. Ce n’est pas un test Dofus en direct.
-- **Captures de test** : accès direct à Kerubim Crépin, Nacf Virgil et Al Etsop. Choisir un PNJ charge sa capture et lance la reconnaissance ; la lecture suit le réglage automatique, sinon cliquer **Lire / Relire**. Ces trois images réelles recadrées sont versionnées dans `tests/fixtures/dialogues/`, sans le chat ni les noms de compte, et replacées sur un fond neutre comme dans les benchmarks. Aucun accès écran nécessaire.
+Modèles : `~/Library/Caches/VoixDesDouze/models/`. Catalogue et sources vérifiées : `~/Library/Caches/VoixDesDouze/network/3.7.12.12/`. Les garder pour l’usage hors ligne. Provenance et empreintes dans `models/manifest.json` et `models/network.json` ; aucun modèle ni catalogue binaire dans Git.
 
-## Données, tests et limites
-
-Réglages et voix : `~/Library/Application Support/VoixDesDouze/settings.json` (écriture atomique ; configuration illisible non écrasée). Modèles : `~/Library/Caches/VoixDesDouze/models/` ; conserver ce cache pour l’usage hors ligne. Révision et SHA256 : `models/manifest.json`. Moteur Swift compilé localement et mis en cache ; une mise à jour peut nécessiter de réaccorder sa permission. Captures et WAV de lecture temporaires, aucun corps de dialogue conservé ou envoyé en ligne.
-
-**`RAPPORT_TESTS.md`** donne les résultats, performances et validations restantes. WAV et JSON réels dans **`samples/`**. **Pas d’écoute humaine revendiquée** : fin normale d’afplay et signal non silencieux ne prouvent pas une sortie audible ou une bonne prononciation. La suite a aussi passé sous interdiction réseau macOS.
+La version OCR, ses captures, ses tests et son ancien rapport sont conservés sur **`archive/ocr-before-network`**, commit `ebdcabe`, poussée sur GitHub avant le nettoyage. `master` ne contient plus ce mode.
 
 ```sh
 .venv/bin/python -m pytest tests -v
+.venv/bin/python scripts/prepare_network.py --verify-only
 .venv/bin/python scripts/prepare_models.py --verify-only
-.venv/bin/python scripts/prepare_models.py --verify-only --samples-dir samples
-.venv/bin/python scripts/benchmark.py --play
 .venv/bin/python scripts/check_audio.py --volume 0.15
 ```
 
-Les commandes de mesure régénèrent les rapports. `--play` lance brièvement afplay ; `check_audio.py` lit les quatre WAV jusqu’à la fin. Les tests OCR exigent macOS ; les tests TTS réels sont explicitement ignorés si les modèles ne sont pas préparés. Aucun test ne télécharge implicitement de modèle. Aucune performance n’est promise sur une majorité de Macs/PC.
+Licences avant redistribution : [Piper GPL-3.0](https://github.com/OHF-Voice/piper1-gpl), PySide6 LGPL/GPL selon composants ; MLS/Siwis **CC-BY 4.0**, Tom **AGPLv3**, selon les MODEL_CARD conservées dans le cache. Textes et données du jeu : droits d’Ankama ; source technique communautaire [dofus-sqlite](https://github.com/ledouxm/dofus-sqlite/releases/tag/v6.0_3.7.12.12), sans approbation supposée. Aucun clonage vocal ni réemploi de ressources Romandub.
 
-Licences à respecter avant redistribution : [Piper GPL-3.0](https://github.com/OHF-Voice/piper1-gpl), PySide6 LGPL/GPL selon composants ; voix MLS/Siwis **CC-BY 4.0**, Tom **AGPLv3** selon les MODEL_CARD conservées dans le cache. Provenance/attribution des corpus dans le manifeste ; aucun modèle binaire dans Git.
+## Perspective communautaire — hors du travail actuel
+
+Proposer ensuite le produit à Ankama : choix local des voix par PNJ, contribution du texte et de l’audio après prévisualisation/validation, enregistrements humains autorisés, stockage distant et interface web d’upvote/downvote des voix par personnage. Les meilleures propositions pourraient devenir les choix par défaut sans écraser les préférences personnelles. La lecture locale resterait autonome ; les contributions et mises à jour nécessiteraient Internet. **Serveur, uploads et votes ne sont pas implémentés.** Droits des contributeurs, autorisations relatives aux textes et modération restent à définir avant publication du service.

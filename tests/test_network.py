@@ -140,3 +140,29 @@ def test_incompatible_frame_fails_instead_of_reusing_old_dialogue():
     stream.feed(0, valid)
     with pytest.raises(ProtocolError):
         stream.feed(len(valid), b"\x01\x00")
+
+
+def test_network_dialogue_to_persisted_voice_and_real_piper_offline(tmp_path, monkeypatch):
+    from array import array
+    from voix_des_douze.settings import Store, model_directory
+    from voix_des_douze.speech import SpeechEngine, available_voices
+    voices = available_voices(model_directory())
+    if not voices:
+        pytest.skip("Préparez les modèles avec Installer.command")
+
+    def deny(*args, **kwargs):
+        raise AssertionError("Le décodage et Piper ne doivent pas ouvrir de connexion")
+    monkeypatch.setattr(socket.socket, "connect", deny)
+    monkeypatch.setattr(socket, "create_connection", deny)
+    monkeypatch.setattr(socket, "getaddrinfo", deny)
+    state, events = make_conversation()
+    reader = PacketReader(state.handle)
+    reader.feed(pcap(packet(envelope("jnj", map_body()) + envelope("ilx", opened()) + envelope("ilf", num(3, 33)))))
+    dialogue = next(value for kind, value in events if kind == "dialogue")
+    store = Store(tmp_path / "settings.json")
+    choice = store.voice_for(dialogue.npc, [v.key for v in voices])
+    segments = list(SpeechEngine(model_directory()).synthesize(dialogue.text, next(v for v in voices if v.key == choice)))
+    signal = array("h", b"".join(segment.pcm for segment in segments))
+    assert max(signal) - min(signal) > 1000
+    assert 0.5 < len(signal) / segments[0].sample_rate < 15
+    assert Store(store.path).voice_for(dialogue.npc, [v.key for v in voices]) == choice

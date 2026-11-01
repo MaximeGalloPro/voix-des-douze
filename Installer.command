@@ -5,8 +5,8 @@ if [[ "$(uname -s)" != Darwin ]]; then
   echo "Cette application nécessite macOS 14 ou ultérieur."
   exit 1
 fi
-if ! xcrun --find swift >/dev/null 2>&1; then
-  echo "Installez les outils Apple avec xcode-select --install puis relancez ce fichier."
+if ! /usr/bin/python3 -I --version >/dev/null 2>&1; then
+  echo "Le helper de capture nécessite Python système (Command Line Tools Apple). Installez-les avec xcode-select --install si nécessaire."
   exit 1
 fi
 if [[ ! -d .venv ]]; then
@@ -24,5 +24,4 @@ fi
 .venv/bin/python -c 'import sys; assert sys.version_info[:2] == (3, 13), "Le venv existant doit utiliser Python 3.13 ; il ne sera pas remplacé."'
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python scripts/prepare_models.py
-.venv/bin/python -c 'from voix_des_douze.macos import permission_status; print("Moteur Apple compilé. Capture autorisée :", permission_status())'
 printf '\nInstallation terminée. Ouvrez Lancer.command. Les lancements suivants restent hors ligne.\n'

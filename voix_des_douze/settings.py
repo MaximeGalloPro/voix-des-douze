@@ -25,13 +25,10 @@ def model_directory() -> Path:
 @dataclass
 class Settings:
     automatic: bool = True
-    read_responses: bool = False
     volume: float = 0.8
     speed: float = 1.0
     default_voice: str = ""
-    response_voice: str = ""
     assignments: dict[str, str] = field(default_factory=dict)
-    regions: dict[str, dict[str, list[float]]] = field(default_factory=dict)
     shortcuts: dict[str, str] = field(default_factory=lambda: {
         "toggle": "F6", "stop": "F7", "replay": "F8"})
 
@@ -43,13 +40,23 @@ class Store:
         self.settings = Settings()
         if self.path.exists():
             try:
-                raw = json.loads(self.path.read_text(encoding="utf-8"))
-                self.settings = Settings(**raw)
+                original = self.path.read_text(encoding="utf-8")
+                raw = json.loads(original)
+                # One-time settings migration; voice choices and shortcuts stay intact.
+                retired = {"regions", "read_responses", "response_voice"}
+                migrated = bool(retired.intersection(raw))
+                self.settings = Settings(**{key: value for key, value in raw.items() if key not in retired})
                 s = self.settings
                 if not (0 <= s.volume <= 1 and 0.5 <= s.speed <= 2):
                     raise ValueError("Volume ou vitesse hors limites")
-                if not all(isinstance(v, dict) for v in (s.assignments, s.regions, s.shortcuts)):
+                if not all(isinstance(v, dict) for v in (s.assignments, s.shortcuts)):
                     raise ValueError("Configuration invalide")
+                if migrated:
+                    backup = self.path.with_name(self.path.stem + "-before-network.json")
+                    if not backup.exists():
+                        with backup.open("x", encoding="utf-8") as stream:
+                            stream.write(original)
+                    self.save()
             except (ValueError, TypeError) as exc:
                 raise ValueError(f"Configuration illisible : {self.path}. Conservez ce fichier avant de le corriger. {exc}") from exc
 
