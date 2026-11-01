@@ -1,0 +1,204 @@
+{
+  "text": "Bonjour aventurier. Herdegrize vous attend près du château !",
+  "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "python": "3.13.8",
+  "piper_tts": "1.8.0",
+  "onnxruntime": "1.31.1",
+  "model_revision": "b4e358ffcb232591bf73a540e70f7de528e4174a",
+  "cpu_threads": {
+    "intra": 2,
+    "inter": 1
+  },
+  "offline_proof": "Synthèse réelle, imports compris, socket.connect/connect_ex/create_connection/getaddrinfo interdits par exception Python.",
+  "limits": [
+    "Pas d'écoute humaine ni de classement de qualité perceptive.",
+    "Froid = nouvelle session ONNX ; cache disque non vidé.",
+    "Latence livraison PCM ; aucun démarrage audio matériel mesuré.",
+    "Interdiction sockets Python, pas un pare-feu système."
+  ],
+  "voices": [
+    {
+      "key": "fr_FR-siwis-medium:0",
+      "label": "Siwis",
+      "model": "fr_FR-siwis-medium",
+      "speaker_id": 0,
+      "audio": {
+        "file": "fr_FR-siwis-medium-0.wav",
+        "sample_rate": 22050,
+        "channels": 1,
+        "sample_width": 2,
+        "pcm_sha256": "5329a6df3e700b017ae279a231528178c8f93ed8ff1417ed47d05b4d8c921598",
+        "rms_int16": 5015.35994239932,
+        "peak_int16": 32767
+      },
+      "cold": {
+        "first_chunk_s": 6.153929584077559,
+        "total_s": 6.60145583411213,
+        "duration_s": 3.81968253968254,
+        "rtf": 1.7282734273149276,
+        "segments": 2
+      },
+      "warm": [
+        {
+          "first_chunk_s": 0.19205724995117635,
+          "total_s": 0.48932291695382446,
+          "duration_s": 3.7268027210884354,
+          "rtf": 0.13129831482223311,
+          "segments": 2
+        },
+        {
+          "first_chunk_s": 0.2227837920654565,
+          "total_s": 0.5699923749780282,
+          "duration_s": 3.982222222222222,
+          "rtf": 0.14313424594872362,
+          "segments": 2
+        },
+        {
+          "first_chunk_s": 0.2362771249609068,
+          "total_s": 0.5591420419514179,
+          "duration_s": 3.842902494331066,
+          "rtf": 0.14549992948721635,
+          "segments": 2
+        }
+      ]
+    },
+    {
+      "key": "fr_FR-mls-medium:0",
+      "label": "MLS · 1840",
+      "model": "fr_FR-mls-medium",
+      "speaker_id": 0,
+      "audio": {
+        "file": "fr_FR-mls-medium-0.wav",
+        "sample_rate": 22050,
+        "channels": 1,
+        "sample_width": 2,
+        "pcm_sha256": "51b4351ca3f0f9d8cb1b9dee6ac31450fa740ff85048933059339592374c199f",
+        "rms_int16": 2658.105715606852,
+        "peak_int16": 32767
+      },
+      "cold": {
+        "first_chunk_s": 2.917543583083898,
+        "total_s": 3.585120625095442,
+        "duration_s": 7.116916099773243,
+        "rtf": 0.5037463663804707,
+        "segments": 2
+      },
+      "warm": [
+        {
+          "first_chunk_s": 0.4704328329535201,
+          "total_s": 0.9180264580063522,
+          "duration_s": 6.141678004535147,
+          "rtf": 0.14947485969281712,
+          "segments": 2
+        },
+        {
+          "first_chunk_s": 0.6053372910246253,
+          "total_s": 1.0830012909136713,
+          "duration_s": 7.163356009070295,
+          "rtf": 0.15118630004461134,
+          "segments": 2
+        },
+        {
+          "first_chunk_s": 0.35309550003148615,
+          "total_s": 0.9025536669651046,
+          "duration_s": 5.746938775510204,
+          "rtf": 0.15704946619776325,
+          "segments": 2
+        }
+      ]
+    },
+    {
+      "key": "fr_FR-mls-medium:1",
+      "label": "MLS · 3698",
+      "model": "fr_FR-mls-medium",
+      "speaker_id": 1,
+      "audio": {
+        "file": "fr_FR-mls-medium-1.wav",
+        "sample_rate": 22050,
+        "channels": 1,
+        "sample_width": 2,
+        "pcm_sha256": "77b3b4a8e7eccde74e9918e11e26045a2c97acdf87ee880b5638029812198c51",
+        "rms_int16": 4455.8381614604805,
+        "peak_int16": 32767
+      },
+      "cold": {
+        "first_chunk_s": 2.6894482080824673,
+        "total_s": 3.611262833001092,
+        "duration_s": 9.671111111111111,
+        "rtf": 0.3734072322726313,
+        "segments": 2
+      },
+      "warm": [
+        {
+          "first_chunk_s": 0.6021593339974061,
+          "total_s": 1.0812150000128895,
+          "duration_s": 8.428843537414966,
+          "rtf": 0.12827560450178746,
+          "segments": 2
+        },
+        {
+          "first_chunk_s": 0.6067191250622272,
+          "total_s": 1.3090354580199346,
+          "duration_s": 9.485351473922902,
+          "rtf": 0.1380060044816189,
+          "segments": 2
+        },
+        {
+          "first_chunk_s": 0.48064520896878093,
+          "total_s": 1.1104668750194833,
+          "duration_s": 7.952834467120182,
+          "rtf": 0.1396315841365169,
+          "segments": 2
+        }
+      ]
+    },
+    {
+      "key": "fr_FR-tom-medium:0",
+      "label": "Tom",
+      "model": "fr_FR-tom-medium",
+      "speaker_id": 0,
+      "audio": {
+        "file": "fr_FR-tom-medium-0.wav",
+        "sample_rate": 44100,
+        "channels": 1,
+        "sample_width": 2,
+        "pcm_sha256": "ec60fbf14bd2a2fed7e73f9a4fff275499b29512cb21cafde8d39ec6689937d1",
+        "rms_int16": 3133.2520810511596,
+        "peak_int16": 32767
+      },
+      "cold": {
+        "first_chunk_s": 5.424524208065122,
+        "total_s": 6.863792541087605,
+        "duration_s": 4.243446712018141,
+        "rtf": 1.617504120329404,
+        "segments": 2
+      },
+      "warm": [
+        {
+          "first_chunk_s": 0.37164945795666426,
+          "total_s": 1.0669926250120625,
+          "duration_s": 4.220226757369614,
+          "rtf": 0.25282826880067893,
+          "segments": 2
+        },
+        {
+          "first_chunk_s": 0.40249441599007696,
+          "total_s": 1.0922034999821335,
+          "duration_s": 4.162176870748299,
+          "rtf": 0.2624116018850903,
+          "segments": 2
+        },
+        {
+          "first_chunk_s": 0.3368667080067098,
+          "total_s": 0.9910919161047786,
+          "duration_s": 4.167981859410431,
+          "rtf": 0.2377870032872385,
+          "segments": 2
+        }
+      ]
+    }
+  ],
+  "socket_guard_checked": true,
+  "four_distinct_pcm": true
+}

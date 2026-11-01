@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "repository": "rhasspy/piper-voices",
+  "revision": "b4e358ffcb232591bf73a540e70f7de528e4174a",
+  "piper_version": "1.8.0",
+  "documentation": "https://github.com/OHF-Voice/piper1-gpl/blob/v1.8.0/docs/API_PYTHON.md",
+  "notes": "Les licences ci-dessous sont celles déclarées dans les MODEL_CARD conservées avec chaque modèle. Aucun classement de qualité perceptive ; écoute humaine non effectuée.",
+  "models": [
+    {
+      "name": "fr_FR-mls-medium",
+      "source_dir": "fr/fr_FR/mls/medium",
+      "license": "CC-BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "dataset_url": "http://openslr.org/94/",
+      "sample_rate": 22050,
+      "num_speakers": 125,
+      "selected_speakers": {"1840": 0, "3698": 1},
+      "files": [
+        {"source": "fr_FR-mls-medium.onnx", "sha256": "0ed223f78466917f2bae05ee90096ce69ab1fdeb251f55590d0e7422d234e162", "size": 76733750},
+        {"source": "fr_FR-mls-medium.onnx.json", "sha256": "252b0b0a6e4cc4949e23eccb956f9c779986c32f934f2f7e2191e5fdc2edca61", "size": 7036},
+        {"source": "MODEL_CARD", "sha256": "443ca90f1ed8e57d9fb802da6dc19c302d5d9b51ddbfbf27a17f3fb5c37ad154", "size": 222}
+      ]
+    },
+    {
+      "name": "fr_FR-siwis-medium",
+      "source_dir": "fr/fr_FR/siwis/medium",
+      "license": "CC-BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "dataset_url": "https://datashare.is.ed.ac.uk/handle/10283/2353",
+      "sample_rate": 22050,
+      "num_speakers": 1,
+      "selected_speakers": {"default": 0},
+      "files": [
+        {"source": "fr_FR-siwis-medium.onnx", "sha256": "641d1ab097da2b81128c076810edb052b385decc8be3381814802a64a73baf99", "size": 63201294},
+        {"source": "fr_FR-siwis-medium.onnx.json", "sha256": "39479916c2db192b5ac9764daddd0c744d83e023ad890c6976c0633ae4df8959", "size": 4875},
+        {"source": "MODEL_CARD", "sha256": "bd8b8d079d4d3d2c4cc20345889bbcd586d72f021a132f93357a763eb5232cce", "size": 284}
+      ]
+    },
+    {
+      "name": "fr_FR-tom-medium",
+      "source_dir": "fr/fr_FR/tom/medium",
+      "license": "AGPLv3",
+      "license_url": "https://www.gnu.org/licenses/agpl-3.0.html",
+      "dataset_url": "https://git.bksp.space/Tjiho/French-tts-model-piper",
+      "sample_rate": 44100,
+      "num_speakers": 1,
+      "selected_speakers": {"default": 0},
+      "files": [
+        {"source": "fr_FR-tom-medium.onnx", "sha256": "bf65074ccdeeeeaa832e75edb1c0a513c01c9a972bdf085ff8a6e71ea234fd41", "size": 63511038},
+        {"source": "fr_FR-tom-medium.onnx.json", "sha256": "2f7f885ad5a0aad802e3cc24e4f57239febdcb142b4876de5d238094674361cc", "size": 4959},
+        {"source": "MODEL_CARD", "sha256": "ece4132df4a1ae2f90e22c9f01539aec14acb7f8dc8ded64edd2051945d0f1e9", "size": 233}
+      ]
+    }
+  ]
+}
