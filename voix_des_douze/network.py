@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import base64
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -16,6 +15,7 @@ import threading
 import time
 
 from .network_protocol import Catalog, Conversation, PacketReader, ProtocolError, VERSION
+from .native.network_capture import game_connections
 
 
 @dataclass(frozen=True)
@@ -60,16 +60,9 @@ def clients():
 
 def connection(pid):
     text = _run(["/usr/sbin/lsof", "-a", "-p", str(pid), "-iTCP:5555", "-sTCP:ESTABLISHED", "-nP", "-Fn"])
-    found = []
-    for line in text.splitlines():
-        match = re.fullmatch(r"n([0-9.]+):(\d+)->([0-9.]+):5555", line)
-        if match:
-            local, port, remote = match.groups()
-            ipaddress.IPv4Address(local)
-            ipaddress.IPv4Address(remote)
-            found.append(Connection(local, int(port), remote))
+    found = [Connection(*endpoint) for endpoint in game_connections(text)]
     if len(found) != 1:
-        raise ProtocolError("Choisissez un client connecté : une seule connexion de jeu IPv4 sur le port 5555 est nécessaire.")
+        raise ProtocolError("Choisissez un client connecté : une seule connexion de jeu IPv4 ou IPv6 sur le port 5555 est nécessaire.")
     return found[0]
 
 

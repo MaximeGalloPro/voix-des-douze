@@ -13,6 +13,21 @@ import subprocess
 import time
 
 
+def game_connections(text):
+    """Numeric lsof endpoints, canonicalized for IPv4 and bracketed IPv6."""
+    found = []
+    for line in text.splitlines():
+        match = re.fullmatch(r"n(\[[0-9a-fA-F:.]+\]|[0-9.]+):(\d+)->(\[[0-9a-fA-F:.]+\]|[0-9.]+):5555", line)
+        if not match:
+            continue
+        local, port, remote = match.groups()
+        local = ipaddress.ip_address(local.strip("[]"))
+        remote = ipaddress.ip_address(remote.strip("[]"))
+        if local.version == remote.version and 1 <= int(port) <= 65535:
+            found.append((str(local), int(port), str(remote)))
+    return found
+
+
 def supervise(child, directory, parent, client, lease_timeout=10):
     """Stop capture even if a live/reused PID no longer services the session."""
     heartbeat = directory / "heartbeat"
@@ -66,9 +81,10 @@ def main():
             or not stat.S_ISFIFO(pipe_info.st_mode) or stat.S_IMODE(pipe_info.st_mode) != 0o600
             or pipe_info.st_uid != args.uid or args.parent <= 1 or args.client <= 1):
         raise RuntimeError("Canal de capture non privé.")
-    for address in (args.local_ip, args.remote_ip):
-        if ipaddress.ip_address(address).version != 4:
-            raise RuntimeError("Capture limitée à IPv4.")
+    local = ipaddress.ip_address(args.local_ip)
+    remote = ipaddress.ip_address(args.remote_ip)
+    if local.version != remote.version:
+        raise RuntimeError("Familles IP incohérentes.")
     if not re.fullmatch(r"[A-Za-z0-9_.]+", args.interface) or not 1 <= args.local_port <= 65535:
         raise RuntimeError("Interface ou port invalide.")
     owner = subprocess.check_output(["/bin/ps", "-p", str(args.parent), "-o", "uid="], text=True).strip()
@@ -76,10 +92,9 @@ def main():
     client_uid = subprocess.check_output(["/bin/ps", "-p", str(args.client), "-o", "uid="], text=True).strip()
     if owner != str(args.uid) or client_uid != str(args.uid) or Path(client).name != "Dofus":
         raise RuntimeError("Processus de jeu ou propriétaire incohérent.")
-    endpoint = "%s:%d->%s:5555" % (args.local_ip, args.local_port, args.remote_ip)
     connections = subprocess.check_output(["/usr/sbin/lsof", "-a", "-p", str(args.client), "-iTCP:5555",
                                            "-sTCP:ESTABLISHED", "-nP", "-Fn"], text=True)
-    if "n" + endpoint not in connections.splitlines():
+    if (str(local), args.local_port, str(remote)) not in game_connections(connections):
         raise RuntimeError("La connexion choisie a changé.")
     stop = directory / "stop"
     if stop.exists():

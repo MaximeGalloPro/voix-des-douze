@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import html
+import ipaddress
 import json
 from pathlib import Path
 import re
@@ -269,12 +270,14 @@ class TCPStream:
 
 
 class PacketReader:
-    """PCAP Ethernet/IPv4 incrémental ; rien n’est écrit sur disque."""
+    """PCAP Ethernet/IPv4/IPv6 incrémental ; rien n’est écrit sur disque."""
     def __init__(self, callback, *, local_ip=None, local_port=None, remote_ip=None, remote_port=5555):
         self.buffer = bytearray()
         self.endian = None
         self.flows = {name: TCPStream(name, callback) for name in ("server", "client")}
-        self.endpoints = (local_ip, local_port, remote_ip, remote_port)
+        self.endpoints = (str(ipaddress.ip_address(local_ip)) if local_ip is not None else None,
+                          local_port, str(ipaddress.ip_address(remote_ip)) if remote_ip is not None else None,
+                          remote_port)
 
     def feed(self, data):
         self.buffer.extend(data)
@@ -289,7 +292,7 @@ class PacketReader:
             else:
                 raise ProtocolError("Format de capture inattendu.")
             if struct.unpack_from(self.endian + "I", self.buffer, 20)[0] != 1:
-                raise ProtocolError("Cette version nécessite une interface Ethernet/Wi-Fi IPv4.")
+                raise ProtocolError("Cette version nécessite une interface Ethernet/Wi-Fi.")
             del self.buffer[:24]
         while len(self.buffer) >= 16:
             size = struct.unpack_from(self.endian + "I", self.buffer, 8)[0]
@@ -299,22 +302,51 @@ class PacketReader:
                 return
             packet = bytes(self.buffer[16:size + 16])
             del self.buffer[:size + 16]
-            if len(packet) < 34 or packet[12:14] != b"\x08\x00":
+            if len(packet) < 14:
                 continue
             ip = packet[14:]
-            if ip[9] != 6:
+            if packet[12:14] == b"\x08\x00":
+                if len(ip) < 20 or ip[0] >> 4 != 4:
+                    raise ProtocolError("En-tête IPv4 incomplet ou invalide.")
+                if ip[9] != 6:
+                    continue
+                header = (ip[0] & 15) * 4
+                total = struct.unpack_from("!H", ip, 2)[0]
+                if header < 20 or not header <= total <= len(ip) or struct.unpack_from("!H", ip, 6)[0] & 0x3fff:
+                    raise ProtocolError("Paquet IPv4 tronqué ou fragmenté ; écoute interrompue.")
+                source_ip = str(ipaddress.ip_address(ip[12:16]))
+                destination_ip = str(ipaddress.ip_address(ip[16:20]))
+            elif packet[12:14] == b"\x86\xdd":
+                if len(ip) < 40 or ip[0] >> 4 != 6:
+                    raise ProtocolError("En-tête IPv6 incomplet ou invalide.")
+                total = 40 + struct.unpack_from("!H", ip, 4)[0]
+                if total > len(ip):
+                    raise ProtocolError("Paquet IPv6 tronqué ; écoute interrompue.")
+                header, protocol = 40, ip[6]
+                while protocol in (0, 43, 60, 51, 44):
+                    if header + 8 > total:
+                        raise ProtocolError("Extension IPv6 tronquée.")
+                    if protocol == 44:
+                        if struct.unpack_from("!H", ip, header + 2)[0] != 0:
+                            raise ProtocolError("Paquet IPv6 fragmenté ; écoute interrompue.")
+                        size = 8
+                    else:
+                        size = (ip[header + 1] + 2) * 4 if protocol == 51 else (ip[header + 1] + 1) * 8
+                    protocol = ip[header]
+                    header += size
+                    if header > total:
+                        raise ProtocolError("Extension IPv6 tronquée.")
+                if protocol != 6:
+                    continue
+                source_ip = str(ipaddress.ip_address(ip[8:24]))
+                destination_ip = str(ipaddress.ip_address(ip[24:40]))
+            else:
                 continue
-            header = (ip[0] & 15) * 4
-            total = struct.unpack_from("!H", ip, 2)[0]
-            if header < 20 or total > len(ip) or struct.unpack_from("!H", ip, 6)[0] & 0x3fff:
-                raise ProtocolError("Paquet IPv4 tronqué ou fragmenté ; écoute interrompue.")
             tcp = ip[header:total]
             if len(tcp) < 20:
                 raise ProtocolError("En-tête TCP incomplet.")
             source, destination, sequence = struct.unpack_from("!HHI", tcp)
             local_ip, local_port, remote_ip, remote_port = self.endpoints
-            source_ip = ".".join(map(str, ip[12:16]))
-            destination_ip = ".".join(map(str, ip[16:20]))
             direction = "server" if source == remote_port else "client"
             if local_ip is not None:
                 endpoints = (source_ip, source, destination_ip, destination)

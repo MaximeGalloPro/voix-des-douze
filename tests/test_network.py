@@ -134,6 +134,75 @@ def test_incremental_pcap_ignores_another_clients_connection():
     assert [(d.npc, d.text) for d in dialogues] == [("Bûcheron", "Bonjour, voyageur.")]
 
 
+def packet6(payload, sequence=10, local_port=40000, client=False, extension=None):
+    local, remote = "2001:db8::1", "64:ff9b::c000:201"
+    source, destination = (local, remote) if client else (remote, local)
+    ports = (local_port, 5555) if client else (5555, local_port)
+    tcp = struct.pack("!HHIIBBHHH", *ports, sequence, 0, 5 << 4, 0x18, 4096, 0, 0) + payload
+    protocol = 6
+    if extension is not None:
+        protocol, extra = extension
+        tcp = extra + tcp
+    ip = struct.pack("!IHBB16s16s", 6 << 28, len(tcp), protocol, 64,
+                     socket.inet_pton(socket.AF_INET6, source), socket.inet_pton(socket.AF_INET6, destination)) + tcp
+    ethernet = b"\0" * 12 + b"\x86\xdd" + ip
+    return struct.pack("<IIII", 0, 0, len(ethernet), len(ethernet)) + ethernet
+
+
+def test_ipv6_dialogue_isolated_reassembled_and_cancelled_by_player_reply():
+    state, events = make_conversation()
+    reader = PacketReader(state.handle, local_ip="2001:0db8:0:0:0:0:0:1", local_port=40000,
+                          remote_ip="64:ff9b::c000:201")
+    wire = envelope("jnj", map_body()) + envelope("ilx", opened()) + envelope("ilf", num(3, 33))
+    foreign = envelope("jnj", map_body(999, 60)) + envelope("ilx", opened(999)) + envelope("ilf", num(3, 34))
+    data = pcap(packet6(foreign, local_port=40001), packet6(wire[:30]),
+                packet6(wire[30:], sequence=40), packet6(envelope("iky", num(1, 88)), client=True))
+    for i in range(0, len(data), 7):
+        reader.feed(data[i:i + 7])
+    assert [(value.npc, value.text) for kind, value in events if kind == "dialogue"] == [
+        ("Bûcheron", "Bonjour, voyageur.")]
+    assert events[-2:] == [("invalidate", None), ("replied", None)]
+
+
+@pytest.mark.parametrize("protocol,extra", [
+    (0, b"\x06\x00" + b"\0" * 6),
+    (43, b"\x06\x00" + b"\0" * 6),
+    (60, b"\x06\x00" + b"\0" * 6),
+    (51, b"\x06\x01" + b"\0" * 10),
+    (44, b"\x06\x00" + b"\0" * 6),
+])
+def test_ipv6_extensions_preserve_tcp_message(protocol, extra):
+    received = []
+    reader = PacketReader(lambda *message: received.append(message))
+    reader.feed(pcap(packet6(envelope("ilx", opened()), extension=(protocol, extra))))
+    assert received == [("server", "ilx", opened())]
+
+
+@pytest.mark.parametrize("extra", [
+    b"\x06\x00\x00\x01" + b"\0" * 4,
+    b"\x06\x00\x00\x08" + b"\0" * 4,
+])
+def test_ipv6_fragments_are_rejected_instead_of_reading_partial_dialogue(extra):
+    reader = PacketReader(lambda *args: pytest.fail("Fragment must not produce dialogue"))
+    with pytest.raises(ProtocolError, match="fragmenté"):
+        reader.feed(pcap(packet6(envelope("ilx", opened()), extension=(44, extra))))
+
+
+def test_ipv6_truncated_extension_is_rejected():
+    reader = PacketReader(lambda *args: pytest.fail("Truncation must not produce dialogue"))
+    with pytest.raises(ProtocolError, match="tronquée"):
+        reader.feed(pcap(packet6(b"", extension=(60, b"\x06\xff" + b"\0" * 6))))
+
+
+def test_numeric_connection_selection_supports_both_address_families():
+    from voix_des_douze.native.network_capture import game_connections
+    assert game_connections(
+        "p123\nn[2001:0db8:0:0:0:0:0:1]:40000->[64:ff9b::c000:201]:5555\n"
+        "n192.0.2.2:40001->192.0.2.1:5555\n"
+        "n[2001:db8::1]:40000->[2001:db8::2]:443\n"
+    ) == [("2001:db8::1", 40000, "64:ff9b::c000:201"), ("192.0.2.2", 40001, "192.0.2.1")]
+
+
 def test_incompatible_frame_fails_instead_of_reusing_old_dialogue():
     stream = TCPStream("server", lambda *args: None)
     valid = envelope("ilx", opened())
