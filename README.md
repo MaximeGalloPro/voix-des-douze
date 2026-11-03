@@ -38,6 +38,7 @@ Le lanceur utilise le venv et le code de ce dossier : ce n’est pas une distrib
 - Les dialogues à paramètres ne sont pas encore résolus : un message explicite remplace la lecture, jamais un texte approximatif. Les choix du joueur sont détectés, mais leur texte n’est pas affiché ou lu.
 - Le client choisi correspond à un processus et à son flux réseau, pas à une zone d’écran. L’isolation entre deux connexions est testée ; plusieurs comptes réels simultanés restent à valider. Le plein écran et le déplacement des panneaux n’interviennent plus dans la détection.
 - Si le jeu se reconnecte ou si son flux change, l’écoute s’arrête : la relancer explicitement, puis resynchroniser la carte. Un catalogue correspondant au numéro de version ne garantit pas à lui seul que les clés obfusquées resteront stables après une mise à jour.
+- Garde-fou de capture : le worker renouvelle un signal de vie local chaque seconde. Le helper arrête `tcpdump` si l’application ou le jeu disparaît, si le canal est supprimé, sur **Arrêter**, ou après **10 secondes sans renouvellement** (application bloquée). Arrêt forcé après 2 secondes si le processus résiste. Aucun service permanent ni recherche/arrêt global des autres captures. Ce garde-fou suppose le helper encore actif ; tuer brutalement le helper lui-même n’est pas couvert. Après une mise à jour, quitter puis relancer l’application pour charger le nouveau code.
 - Pas encore de mesure prolongée CPU/mémoire/autonomie. Les résultats effectivement observés sont dans **`RAPPORT_TESTS.md`**.
 
 ## Données et sauvegarde OCR

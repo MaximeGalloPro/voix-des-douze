@@ -10,6 +10,41 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import time
+
+
+def supervise(child, directory, parent, client, lease_timeout=10):
+    """Stop capture even if a live/reused PID no longer services the session."""
+    heartbeat = directory / "heartbeat"
+    stamp = None
+    renewed = time.monotonic()
+    diagnostic = b""
+    try:
+        while child.poll() is None and not (directory / "stop").exists():
+            try:
+                current = heartbeat.stat().st_mtime_ns
+                os.kill(parent, 0)
+                os.kill(client, 0)
+            except (FileNotFoundError, ProcessLookupError):
+                break
+            now = time.monotonic()
+            if current != stamp:
+                stamp, renewed = current, now
+            if now - renewed >= lease_timeout:
+                break
+            try:
+                child.wait(timeout=0.25)
+            except subprocess.TimeoutExpired:
+                pass
+    finally:
+        if child.poll() is None:
+            child.terminate()
+        try:
+            _, diagnostic = child.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            _, diagnostic = child.communicate()
+    return diagnostic
 
 
 def main():
@@ -56,25 +91,7 @@ def main():
     with os.fdopen(fd, "wb", buffering=0) as stream:
         child = subprocess.Popen(["/usr/sbin/tcpdump", "-p", "-i", args.interface, "-nn", "-s", "0", "-U", "-w", "-", flow_filter],
                                  stdin=subprocess.DEVNULL, stdout=stream, stderr=subprocess.PIPE)
-        try:
-            while child.poll() is None and directory.exists() and not stop.exists():
-                try:
-                    os.kill(args.parent, 0)
-                    os.kill(args.client, 0)
-                except ProcessLookupError:
-                    break
-                try:
-                    child.wait(timeout=0.25)
-                except subprocess.TimeoutExpired:
-                    pass
-        finally:
-            if child.poll() is None:
-                child.terminate()
-            try:
-                _, diagnostic = child.communicate(timeout=2)
-            except subprocess.TimeoutExpired:
-                child.kill()
-                _, diagnostic = child.communicate()
+        diagnostic = supervise(child, directory, args.parent, args.client)
         if not stop.exists() and child.returncode:
             raise RuntimeError("Capture interrompue : " + diagnostic.decode(errors="replace")[-500:])
 

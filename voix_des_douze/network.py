@@ -162,6 +162,8 @@ class NetworkSession:
                         return
                     fifo = self.directory / "packets"
                     os.mkfifo(fifo, 0o600)
+                    heartbeat = self.directory / "heartbeat"
+                    heartbeat.touch(mode=0o600)
                     fd = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
                 source = (Path(__file__).parent / "native/network_capture.py").read_text(encoding="utf-8")
                 arguments = [str(self.directory), str(os.getpid()), str(self.client.pid), str(os.getuid()), interface,
@@ -177,6 +179,7 @@ class NetworkSession:
                 authorized_deadline = time.monotonic() + 120
                 check_at = time.monotonic() + 3
                 ready = False
+                heartbeat_at = time.monotonic()
                 try:
                     while not self.stop_event.is_set():
                         readable, _, _ = select.select([fd], [], [], 0.2)
@@ -194,6 +197,9 @@ class NetworkSession:
                         elif auth.poll() is not None:
                             break
                         now = time.monotonic()
+                        if now >= heartbeat_at:
+                            heartbeat.touch(mode=0o600)
+                            heartbeat_at = now + 1
                         if not ready and now > authorized_deadline:
                             raise ProtocolError("Autorisation ou démarrage de capture trop long ; relancez l’écoute.")
                         if now >= check_at:

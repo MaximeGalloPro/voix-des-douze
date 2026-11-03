@@ -74,3 +74,13 @@ Le catalogue a été migré vers le schéma 2 sur les sources réelles déjà pr
 L’ancien catalogue a été sauvegardé avant remplacement atomique. Le rejeu hors ligne de la capture Dofus antérieure identifie toujours Agride et sa première réplique. Le fichier des réglages/attributions de voix est identique avant et après cette opération. Catalogue et sources vérifiés ensuite avec `--verify-only`. Aucun nouvel essai en jeu ni changement automatique de voix fondé sur ces métadonnées.
 
 Suite exécutée : **25 tests réussis, 1 échec, en 5,72 s**. Les deux nouveaux tests vérifient la migration avec sauvegarde, les homonymes par identifiant, les PNJ sans traduction, les codes inconnus conservés, la préparation répétée sans modification et le refus d’écraser un catalogue personnalisé. L’échec concerne `test_real_speed_changes_audio_duration` : 4,5395 s à vitesse 0,5 contre 1,8692 s à vitesse 2, sous le rapport minimal de 2,5 attendu par ce test. Le moteur de synthèse et ce test n’ont pas été modifiés ; l’échec est signalé, pas masqué par un ajustement du seuil.
+
+## Arrêt de capture en cas de disparition de session
+
+Un signal de vie renouvelé chaque seconde complète les contrôles existants du PID et du fichier d’arrêt. Sans renouvellement pendant 10 secondes, le helper termine sa propre capture ; si elle résiste, il la tue après 2 secondes. Cela couvre notamment un worker bloqué alors que le processus existe encore ou un PID réutilisé. Aucun arrêt global de `tcpdump`, service permanent ou élévation supplémentaire.
+
+Vérification : `.venv/bin/python -m pytest tests/test_capture_lifecycle.py tests/test_network.py -q` : **12 tests réussis en 9,53 s**. Les cinq nouveaux cas utilisent de vrais sous-processus : propriétaire tué brutalement, arrêt explicite, canal supprimé, propriétaire vivant sans renouvellement avec capture ignorant SIGTERM, et renouvellement maintenant la capture active jusqu’à l’arrêt.
+
+Smoke hors tests avec le binaire système `/usr/sbin/tcpdump`, en lecture hors ligne de l’entrée standard bloquée, sans accès réseau ni privilèges : expiration du délai de production de 10 secondes, sortie **SIGTERM (-15) après 10,120 s**, propriétaire toujours vivant. Ce n’est pas un essai de capture privilégiée dans Dofus. Le helper lui-même doit rester actif pour superviser son enfant ; son propre SIGKILL n’est pas couvert.
+
+Diagnostic de la connexion utilisateur : Dofus actif avec une connexion TCP 5555 IPv6, aucun `tcpdump` trouvé parmi les processus actifs. Le refus de cette connexion provient de la limite IPv4 actuelle, pas d’une capture orpheline. Le support IPv6 n’a pas été ajouté dans ce correctif.
