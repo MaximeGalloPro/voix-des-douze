@@ -1,4 +1,4 @@
-"""Lecture seule du protocole observé sur Dofus 3.7.12.12 ; aucun accès réseau.
+"""Lecture seule du protocole observé sur Dofus 3.7.13.17 ; aucun accès réseau.
 
 Les clés obfusquées sont spécifiques à cette version. Les paquets étrangers et
 les chaînes privées ne sont ni publiés ni conservés par ce module.
@@ -16,7 +16,7 @@ from typing import Callable
 
 from .dialogue import Dialogue
 
-VERSION = "3.7.12.12"
+VERSION = "3.7.13.17"
 CATALOG_SCHEMA = 2
 MAX_FRAME = 1_000_000
 

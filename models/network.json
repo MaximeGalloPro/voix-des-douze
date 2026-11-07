@@ -1,10 +1,10 @@
 {
-  "version": "3.7.12.12",
+  "version": "3.7.13.17",
   "repository": "ledouxm/dofus-sqlite",
-  "release": "v6.0_3.7.12.12",
+  "release": "v6.0_3.7.13.17",
   "files": [
-    {"source": "i18n_fr.json", "size": 28877969, "sha256": "1e81b36ff8a1ade11536ddde9ce1ec76c02afe79865a73be0603416fc9b1ad14"},
-    {"source": "npcsdata.json", "size": 30158855, "sha256": "02a718ff6a34582f14d913f74b5d421972a0bd3293df00868d39c6eb8048b17b"},
-    {"source": "npcmessagesdata.json", "size": 30931117, "sha256": "39f925868bf9a99805a0bce828e5237a845a80029db2c60eef7f9be093f783e5"}
+    {"source": "i18n_fr.json", "size": 28975738, "sha256": "ab0db2a7907858c954d18922b2916ad0cfa6d802bc1f7e255818b0573c33bdc3"},
+    {"source": "npcsdata.json", "size": 30275759, "sha256": "21e58a08c3654f69ddb8a39b6d51cb29124165a3fd1bf60e53d2dfd5ddd6628d"},
+    {"source": "npcmessagesdata.json", "size": 31048963, "sha256": "72e668633f32f7d400cda61d9cc93bc014b482a66fa2ece650aef5057b7df487"}
   ]
 }
