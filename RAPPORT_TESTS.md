@@ -84,3 +84,15 @@ Vérification : `.venv/bin/python -m pytest tests/test_capture_lifecycle.py test
 Smoke hors tests avec le binaire système `/usr/sbin/tcpdump`, en lecture hors ligne de l’entrée standard bloquée, sans accès réseau ni privilèges : expiration du délai de production de 10 secondes, sortie **SIGTERM (-15) après 10,120 s**, propriétaire toujours vivant. Ce n’est pas un essai de capture privilégiée dans Dofus. Le helper lui-même doit rester actif pour superviser son enfant ; son propre SIGKILL n’est pas couvert.
 
 Diagnostic de la connexion utilisateur : Dofus actif avec une connexion TCP 5555 IPv6, aucun `tcpdump` trouvé parmi les processus actifs. Le refus de cette connexion provient de la limite IPv4 actuelle, pas d’une capture orpheline. Le support IPv6 n’a pas été ajouté dans ce correctif.
+
+## Support IPv6 et nouvelle version du jeu
+
+Sélection de connexion et vérification du helper partagent désormais la lecture des adresses numériques IPv4/IPv6 de `lsof`. Le décodeur Ethernet traite aussi IPv6, les extensions et les fragments atomiques ; les fragments nécessitant un réassemblage sont refusés. Les deux extrémités et ports restent vérifiés pour isoler le client.
+
+Vérification ciblée : **22 tests réussis en 4,77 s** (`tests/test_network.py`, `tests/test_capture_lifecycle.py`). Cas IPv6 : dialogue isolé d’une autre connexion, livraison PCAP incrémentale, TCP découpé, annulation sur réponse du joueur, extensions et refus des fragments/extensions tronquées. Le reste de la suite, notamment le test Piper précédemment en échec, n’a pas été relancé.
+
+Smoke hors tests : ancienne capture réelle convertie avec des en-têtes IPv6 synthétiques. **149 paquets**, cinq répliques d’Agride résolues, réponse du joueur détectée ; le vrai `tcpdump` hors ligne sélectionne les 149 paquets avec le filtre du helper. Ce n’est pas une capture IPv6 en jeu réel.
+
+Après le redémarrage des serveurs, le client relancé est **3.7.13.17**, connecté en **IPv4** via `en0`. Le catalogue local de 6 472 PNJ est lisible, mais reste celui de 3.7.12.12. Le démarrage réel de `NetworkSession` rend : `Client 3.7.13.17 incompatible : mode réseau vérifié uniquement pour 3.7.12.12.` Aucun lancement de capture ni lecture en jeu effectué pour cette version. Le contrôle de compatibilité est conservé ; ne pas changer uniquement le numéro de version pour contourner ce refus.
+
+Routage macOS vérifié hors capture : la recherche d’interface nécessite `route get -inet6` pour IPv6 (l’appel sans famille échouait). Après correction, `interface_for` rend `en0` pour la destination NAT64 précédente comme pour la destination IPv4 actuelle.

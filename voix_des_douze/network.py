@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import base64
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -82,7 +83,8 @@ def client_version(pid):
 
 
 def interface_for(remote_ip):
-    text = _run(["/sbin/route", "-n", "get", remote_ip])
+    family = "-inet6" if ipaddress.ip_address(remote_ip).version == 6 else "-inet"
+    text = _run(["/sbin/route", "-n", "get", family, remote_ip])
     match = re.search(r"^\s*interface:\s*([A-Za-z0-9_.]+)\s*$", text, re.MULTILINE)
     if not match:
         raise ProtocolError("Impossible de trouver l’interface de la connexion choisie.")
