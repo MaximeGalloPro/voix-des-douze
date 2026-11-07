@@ -60,7 +60,7 @@ L’accès BPF est refusé avec les droits utilisateur ordinaires sur cette mach
 - autres PNJ en jeu réel, plusieurs comptes simultanés, reconnexions réelles et longues sessions CPU/mémoire/autonomie ; les tests de transitions et d’isolation ne remplacent pas ces essais ;
 - dialogues paramétrés : explicitement refusés pour éviter de lire des noms/valeurs non résolus ;
 - texte des choix du joueur : non affiché/non lu, seul l’événement de réponse est utilisé pour annuler ;
-- version différente de 3.7.12.12, IPv6 et interfaces de capture autres qu’Ethernet/Wi-Fi : non pris en charge ;
+- version différente de 3.7.13.17 et interfaces de capture autres qu’Ethernet/Wi-Fi : non prises en charge ; IPv6 vérifié hors ligne, pas encore en capture réelle ;
 - lecture démarrée au milieu d’une carte : un changement de carte est nécessaire pour observer les identités, aucun ancien état de session n’est réutilisé ;
 - frappe physique des raccourcis globaux pendant le jeu non vérifiée ; enregistrement Carbon exercé sans surveillance des frappes ;
 - compatibilité contractuelle et droits de redistribution à clarifier avec Ankama avant diffusion. Une capture passive n’est pas une autorisation de l’éditeur.
@@ -96,3 +96,15 @@ Smoke hors tests : ancienne capture réelle convertie avec des en-têtes IPv6 sy
 Après le redémarrage des serveurs, le client relancé est **3.7.13.17**, connecté en **IPv4** via `en0`. Le catalogue local de 6 472 PNJ est lisible, mais reste celui de 3.7.12.12. Le démarrage réel de `NetworkSession` rend : `Client 3.7.13.17 incompatible : mode réseau vérifié uniquement pour 3.7.12.12.` Aucun lancement de capture ni lecture en jeu effectué pour cette version. Le contrôle de compatibilité est conservé ; ne pas changer uniquement le numéro de version pour contourner ce refus.
 
 Routage macOS vérifié hors capture : la recherche d’interface nécessite `route get -inet6` pour IPv6 (l’appel sans famille échouait). Après correction, `interface_for` rend `en0` pour la destination NAT64 précédente comme pour la destination IPv4 actuelle.
+
+## Patch Dofus 3.7.13.17 validé avec Essiac d’Engrape
+
+Les trois sources publiées dans `ledouxm/dofus-sqlite@v6.0_3.7.13.17` ont été téléchargées dans un nouveau cache versionné, avec tailles et SHA256 vérifiés. Catalogue : **6 487 fiches PNJ / 6 487 noms / 55 337 répliques**. L’ancien cache n’a pas été remplacé. Le manifeste et la version du décodeur ciblent maintenant 3.7.13.17 ; les autres versions restent refusées.
+
+Capture réelle limitée à la connexion du client choisi, autorisée par macOS. Séquence observée : deux changements de carte (`jnj`), ouverture d’Essiac d’Engrape (`ilx`, carte 192415750, entité -20001, modèle PNJ 520), accueil (`ilf`, réplique 48366), réponse du joueur (`iky`, réponse 64362), réplique 48371 et fermeture (`kis`). Les clés et champs utiles sont inchangés par rapport au décodeur existant. La réponse 64362 correspond à « Se renseigner sur les modalités d’ouverture d’un compte en banque ».
+
+L’accueil 48366 contient `#1 Kamas` et un paramètre `PB` : il reste explicitement refusé. Cela explique l’absence de texte/son lors des ouvertures initiales, même avec une écoute active. Une tentative sans changement de carte a également produit le refus de PNJ non synchronisé. Ces refus n’ont pas été masqués.
+
+Après relance de l’application normale du Dock, synchronisation de la carte et sélection de la réponse ci-dessus, l’utilisateur a confirmé **« Texte et voix présents »** pour « Vous pouvez déposer des kamas… ». Il s’agit d’un essai Dofus réel, pas d’un test synthétique. Aucune nouvelle mesure de latence audio ni validation des dialogues paramétrés.
+
+Commandes exécutées : `.venv/bin/python scripts/prepare_network.py --verify-only`, puis `.venv/bin/python -m pytest tests/test_network.py tests/test_catalog.py tests/test_capture_lifecycle.py -q` : **24 tests réussis en 4,78 s**. Le test vocal de vitesse précédemment en échec n’a pas été relancé. Les fenêtres et scripts temporaires de diagnostic ont été arrêtés ; l’application normale est laissée ouverte pour l’utilisateur.
