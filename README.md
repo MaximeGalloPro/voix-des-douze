@@ -1,6 +1,6 @@
 # Voix des Douze
 
-Application **macOS locale** : événements du client Dofus choisi → nom et texte du PNJ → voix françaises Piper CPU, mémorisées par personnage. Aucun OCR, capture d’écran, LLM, compte ou API payante. Aucun proxy, modification du client ou envoi d’action au jeu.
+Application **macOS locale** : événements du client Dofus choisi → nom et texte du PNJ → voix françaises **Piper, Sopro V2 Turbo ou Pocket TTS**, mémorisées par personnage et par moteur. Aucun OCR, capture d’écran, réécriture par LLM ou API payante. Aucun proxy, modification du client ou envoi d’action au jeu.
 
 Projet indépendant d’Ankama et de Romandub, sans affiliation ou approbation supposée. La lecture passive du réseau ne vaut pas autorisation d’Ankama ; sa compatibilité contractuelle doit être clarifiée avant diffusion communautaire.
 
@@ -23,6 +23,41 @@ Prérequis : macOS 14+, **Python 3.13**, et Python système des Command Line Too
 
 Après préparation, l’application ne télécharge rien pour démarrer l’écoute ou produire la voix. Le jeu lui-même nécessite sa connexion habituelle. Aucun historique de paquets ou de dialogues n’est enregistré par l’application et rien n’est envoyé à un serveur communautaire.
 
+### Choisir Piper, Sopro ou Pocket
+
+Le panneau **Moteur vocal** sélectionne le moteur ; ses quatre voix apparaissent dans **Ce PNJ** et **Par défaut**. Les préférences Piper existantes sont conservées ; changer de moteur ne remplace pas les attributions des autres. La sélection est mémorisée au prochain lancement.
+
+- **Piper** utilise le venv principal et les modèles historiques Siwis, MLS 1840, MLS 3698 et Tom.
+- **Sopro V2 Turbo 2.2.0 / Pocket TTS 4.0.1 français** utilisent `.venv-neural`, séparé de PySide6/Piper. Cliquer **Télécharger / préparer** autorise explicitement l’installation isolée et le téléchargement ; sélectionner simplement un modèle absent ne lance aucune connexion. Pocket nécessite d’accepter les conditions de [kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts) avec son compte Hugging Face et de configurer localement un accès autorisé. Ne jamais transmettre de jeton dans une conversation.
+- Un seul processus vocal est conservé à la fois. La sélection ferme l’ancien, puis charge et préchauffe le nouveau hors du thread Qt. **Prêt** signifie que l’amorçage a réussi. **Préécouter** et les lectures sont bloquées tant que le moteur n’est pas prêt. Aucun remplacement silencieux en cas d’erreur.
+- Les quatre références Sopro/Pocket sont exclusivement les **WAV synthétiques Piper** de `samples/`, contrôlés par SHA256 : aucune voix humaine ou ressource Romandub n’a été clonée. Les poids sont figés par révision, et leurs empreintes ainsi que la provenance des références sont conservées dans le cache de chaque moteur.
+- L’inférence ne télécharge rien : chemins locaux uniquement, modes Hub hors ligne et sockets Python interdits dans le processus vocal. Ce garde-fou Python n’est pas un pare-feu système.
+- Sopro/Pocket livrent une **phrase complète** avant le premier segment : le streaming acoustique natif n’est pas exposé ici. Une annulation tue un calcul actif ; la prochaine lecture recharge alors le modèle. Un moteur au repos reste chargé. La vitesse Sopro/Pocket utilise un rééchantillonnage : **la hauteur de voix varie également** ; à 1×, aucun rééchantillonnage.
+
+Préparation et vérification explicites :
+
+```sh
+.venv/bin/python scripts/prepare_neural.py --engine sopro
+.venv/bin/python scripts/prepare_neural.py --engine pocket
+.venv/bin/python scripts/prepare_neural.py --engine sopro --verify-only
+.venv/bin/python scripts/prepare_neural.py --engine pocket --verify-only
+```
+
+`--verify-only` contrôle les fichiers sans installer de dépendances ni accéder au réseau. Les fichiers personnels non conformes ne sont pas écrasés.
+
+### Tests dédiés aux trois moteurs
+
+`./Tester.command` exécute la suite principale, puis les tests Sopro/Pocket dans leur environnement isolé lorsqu’il est installé. Sans poids préparés, les tests réels concernés sont explicitement ignorés, pas déclarés réussis.
+
+```sh
+.venv/bin/python -m pytest tests/test_speech.py tests/test_engines.py tests/test_engine_ui.py -v
+VOIX_REQUIRE_NEURAL=1 .venv-neural/bin/python -m pytest tests/test_neural_speech.py -v
+.venv-neural/bin/python scripts/check_neural.py --engine sopro
+.venv-neural/bin/python scripts/check_neural.py --engine pocket
+```
+
+Les tests dédiés vérifient le vrai PCM hors ligne, les références, la vitesse, les erreurs, la réutilisation des modèles, l’annulation et la fermeture des vrais processus. Le parcours Qt teste la sélection des trois moteurs et le démarrage d’afplay à volume nul. Les diagnostics produisent WAV et mesures sous `.context/neural-*`, sans écoute humaine implicite et sans les confondre avec une session Dofus.
+
 ### Raccourci dans le Dock
 
 Après installation, exécuter `.venv/bin/python scripts/install_dock.py`. Ce script crée **`~/Applications/Voix des Douze.app`** et l’épingle au Dock, sans Terminal, sudo ou service permanent. Les autres icônes et leur ordre sont conservés ; relancer le script ne crée pas de doublon. Une sauvegarde initiale du Dock est conservée dans `~/Library/Application Support/VoixDesDouze/dock-before-shortcut.plist`.
@@ -31,7 +66,7 @@ Le lanceur utilise le venv et le code de ce dossier : ce n’est pas une distrib
 
 ## Contrôles et limites
 
-- **Ce PNJ** : attribution automatique mémorisée, modifiable ; **Par défaut**, **Préécouter**, volume et vitesse 0,5×–2×. Siwis, deux locuteurs MLS et Tom disponibles. La qualité perceptive reste à apprécier en écoutant les voix.
+- **Ce PNJ** : attribution automatique mémorisée par moteur, modifiable ; **Par défaut**, **Préécouter**, volume et vitesse 0,5×–2×. Quatre choix sont disponibles par moteur. La qualité perceptive reste à apprécier en écoutant les voix.
 - Décocher **Lecture automatique** pour afficher sans parler, puis **Lire / Relire**. Suspendre coupe l’écoute et la voix ; reprendre ouvre une nouvelle session et nécessite de resynchroniser la carte.
 - Raccourcis globaux **Contrôle + Option + F6/F7/F8** : suspendre/reprendre, arrêter, relire ; touches configurables, Fn parfois nécessaire. Aucune frappe de jeu n’est observée ou automatisée.
 - Mode expérimental limité à **Dofus 3.7.13.17**, connexion de jeu IPv4 ou IPv6/TCP 5555 et capture Ethernet/Wi-Fi. Les adresses IPv6, y compris NAT64, sont reconnues ; les paquets IP fragmentés ne sont pas réassemblés. Le build du processus choisi est vérifié dans son journal de démarrage ; une version différente est refusée. Après une mise à jour de Dofus, les données et les messages utiles doivent être vérifiés avant de déclarer la nouvelle version compatible.
@@ -60,7 +95,7 @@ La version OCR, ses captures, ses tests et son ancien rapport sont conservés su
 .venv/bin/python scripts/check_audio.py --volume 0.15
 ```
 
-Licences avant redistribution : [Piper GPL-3.0](https://github.com/OHF-Voice/piper1-gpl), PySide6 LGPL/GPL selon composants ; MLS/Siwis **CC-BY 4.0**, Tom **AGPLv3**, selon les MODEL_CARD conservées dans le cache. Textes et données du jeu : droits d’Ankama ; source technique communautaire [dofus-sqlite](https://github.com/ledouxm/dofus-sqlite/releases/tag/v6.0_3.7.13.17), sans approbation supposée. Aucun clonage vocal ni réemploi de ressources Romandub.
+Licences avant redistribution : [Piper GPL-3.0](https://github.com/OHF-Voice/piper1-gpl), PySide6 LGPL/GPL selon composants ; MLS/Siwis **CC-BY 4.0**, Tom **AGPLv3**, selon les MODEL_CARD conservées dans le cache. [Sopro Apache-2.0](https://github.com/samuel-vitorino/sopro), [Pocket et conditions des poids](https://huggingface.co/kyutai/pocket-tts) ; les références synthétiques ne suppriment pas les obligations des modèles Piper sources. Textes et données du jeu : droits d’Ankama ; source technique communautaire [dofus-sqlite](https://github.com/ledouxm/dofus-sqlite/releases/tag/v6.0_3.7.13.17), sans approbation supposée. Aucun clonage d’enregistrement humain ni réemploi de ressources Romandub.
 
 ## Perspective communautaire — hors du travail actuel
 

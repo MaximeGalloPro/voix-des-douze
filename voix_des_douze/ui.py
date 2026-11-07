@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import signal
 import subprocess
 import sys
 import threading
@@ -14,7 +16,7 @@ from .hotkeys import GlobalHotkeys, KEYS
 from .network import NetworkSession, clients
 from .playback import Playback, Utterance
 from .settings import Store, model_directory
-from .speech import SpeechEngine, available_voices
+from .engines import ENGINES, ManagedSpeechEngine, available_voices
 
 
 class Events(QObject):
@@ -22,9 +24,11 @@ class Events(QObject):
     error = Signal(str)
     network = Signal(int, str, object)
     prepared = Signal(bool, str)
-    audio = Signal(int, float)
+    audio = Signal(int, int, float)
     hotkey = Signal(str)
-    ready = Signal()
+    ready = Signal(int)
+    engine_prepared = Signal(int, bool, str)
+    preparation_progress = Signal(str)
 
 
 class MainWindow(QMainWindow):
@@ -34,8 +38,16 @@ class MainWindow(QMainWindow):
         self.resize(960, 720)
         self.store = store or Store()
         self.events = Events()
-        self.voices = available_voices(models or model_directory())
-        self.voice_map = {voice.key: voice for voice in self.voices}
+        self.models = models or model_directory()
+        self.engine_id = self.store.settings.engine
+        self.tts_generation = 0
+        self.tts_ready = False
+        self.preparation_process = None
+        self.preparation_lock = threading.Lock()
+        self.preparing_engine = False
+        self.playback = None
+        self.voices = []
+        self.voice_map = {}
         self.listener = None
         self.generation = 0
         self.accepting = False
@@ -43,9 +55,9 @@ class MainWindow(QMainWindow):
         self.last_dialogue = None
         self.shutting_down = False
         self.build_ui()
-        self.playback = Playback(SpeechEngine(models or model_directory()), self.events.error.emit,
-            self.events.audio.emit, warmup=self.voices, ready=self.events.ready.emit)
-        self.playback.volume = self.store.settings.volume
+        self.events.ready.connect(self.engine_ready)
+        self.events.engine_prepared.connect(self.engine_prepared)
+        self.events.preparation_progress.connect(self.metrics_progress)
         self.apply_settings()
         self.events.clients.connect(self.show_clients)
         self.events.error.connect(self.show_error)
@@ -53,14 +65,13 @@ class MainWindow(QMainWindow):
         self.events.prepared.connect(self.prepared)
         self.events.audio.connect(self.audio_started)
         self.events.hotkey.connect(self.hotkey)
-        self.events.ready.connect(lambda: self.metrics.setText(
-            "Voix préchauffées · en attente d’un dialogue" if self.voices else "Aucun modèle vocal installé"))
+        self.reload_engine()
         self.hotkeys = GlobalHotkeys(self.events.hotkey.emit)
         errors = self.hotkeys.configure(self.store.settings.shortcuts)
         if errors:
             self.show_error(" ; ".join(errors))
         elif not self.voices:
-            self.show_error("Aucun modèle vocal préparé. Fermez puis lancez Installer.command.")
+            self.show_error("Moteur non préparé. Utilisez « Télécharger / préparer » (connexion nécessaire).")
         QTimer.singleShot(0, self.refresh_clients)
 
     def build_ui(self):
@@ -70,7 +81,7 @@ class MainWindow(QMainWindow):
         title = QLabel("VOIX DES DOUZE")
         title.setStyleSheet("font-size:26px;font-weight:700;color:#edce88;padding:8px 0")
         layout.addWidget(title)
-        layout.addWidget(QLabel("Dialogues locaux · voix françaises Piper · aucune action envoyée au jeu"))
+        layout.addWidget(QLabel("Dialogues locaux · Piper / Sopro / Pocket · aucune action envoyée au jeu"))
         source = QGroupBox("Client Dofus à suivre")
         rows = QVBoxLayout(source)
         row = QHBoxLayout()
@@ -104,11 +115,21 @@ class MainWindow(QMainWindow):
         body.addWidget(self.text, 1)
         voice_box = QGroupBox("Voix")
         form = QFormLayout(voice_box)
+        self.engine_combo = QComboBox()
+        for key, label in ENGINES.items():
+            self.engine_combo.addItem(label, key)
+        self.engine_combo.setCurrentIndex(self.engine_combo.findData(self.engine_id))
+        self.engine_combo.currentIndexChanged.connect(self.change_engine)
+        form.addRow("Moteur vocal", self.engine_combo)
+        self.prepare_engine_button = QPushButton("Télécharger / préparer")
+        self.prepare_engine_button.setToolTip("Préparation explicite avec Internet ; aucun téléchargement lors d’une simple sélection.")
+        self.prepare_engine_button.clicked.connect(self.prepare_engine)
+        form.addRow(self.prepare_engine_button)
         self.voice_combo = QComboBox()
         self.default_combo = QComboBox()
-        for voice in self.voices:
-            self.voice_combo.addItem(voice.label, voice.key)
-            self.default_combo.addItem(voice.label, voice.key)
+        for combo in (self.voice_combo, self.default_combo):
+            combo.setMinimumContentsLength(22)
+            combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.voice_combo.currentIndexChanged.connect(self.assign_voice)
         self.default_combo.currentIndexChanged.connect(self.save_controls)
         form.addRow("Ce PNJ", self.voice_combo)
@@ -123,9 +144,9 @@ class MainWindow(QMainWindow):
         self.speed.setSuffix(" ×")
         self.speed.valueChanged.connect(self.save_controls)
         form.addRow("Vitesse", self.speed)
-        preview = QPushButton("Préécouter")
-        preview.clicked.connect(self.preview_voice)
-        form.addRow(preview)
+        self.preview_button = QPushButton("Préécouter")
+        self.preview_button.clicked.connect(self.preview_voice)
+        form.addRow(self.preview_button)
         body.addWidget(voice_box)
         layout.addLayout(body, 1)
         actions = QHBoxLayout()
@@ -158,7 +179,7 @@ class MainWindow(QMainWindow):
         self.automatic.setChecked(settings.automatic)
         self.volume.setValue(round(settings.volume * 100))
         self.speed.setValue(settings.speed)
-        index = self.default_combo.findData(settings.default_voice)
+        index = self.default_combo.findData(self.store.default_for(self.engine_id))
         if index >= 0:
             self.default_combo.setCurrentIndex(index)
         for control in controls:
@@ -168,12 +189,124 @@ class MainWindow(QMainWindow):
         settings = self.store.settings
         settings.automatic = self.automatic.isChecked()
         settings.volume, settings.speed = self.volume.value() / 100, self.speed.value()
-        settings.default_voice = self.default_combo.currentData() or ""
-        self.playback.volume = settings.volume
+        if self.default_combo.currentData():
+            self.store.set_default(self.engine_id, self.default_combo.currentData())
+        if self.playback is not None:
+            self.playback.volume = settings.volume
         try:
             self.store.save()
         except OSError as exc:
             self.show_error(f"Enregistrement impossible : {exc}")
+
+    def change_engine(self, *_):
+        self.engine_id = self.engine_combo.currentData()
+        self.store.settings.engine = self.engine_id
+        try:
+            self.store.save()
+        except OSError as exc:
+            self.show_error(f"Enregistrement impossible : {exc}")
+        self.reload_engine()
+
+    def reload_engine(self):
+        self.tts_generation += 1
+        generation = self.tts_generation
+        self.tts_ready = False
+        self.preview_button.setEnabled(False)
+        if self.playback is not None:
+            self.playback.close()
+        try:
+            self.voices = available_voices(self.models, self.engine_id)
+        except (OSError, ValueError) as exc:
+            self.voices = []
+            self.show_error(str(exc))
+        self.voice_map = {voice.key: voice for voice in self.voices}
+        for combo in (self.voice_combo, self.default_combo):
+            combo.blockSignals(True)
+            combo.clear()
+            for voice in self.voices:
+                combo.addItem(voice.label.split(" · ", 1)[-1], voice.key)
+            combo.blockSignals(False)
+        self.apply_settings()
+        if self.last_dialogue and self.voices:
+            key = self.store.voice_for(self.last_dialogue.npc, list(self.voice_map), self.engine_id)
+            self.voice_combo.blockSignals(True)
+            self.voice_combo.setCurrentIndex(self.voice_combo.findData(key))
+            self.voice_combo.blockSignals(False)
+        self.metrics.setText(f"{ENGINES[self.engine_id]} · chargement et préchauffage…" if self.voices
+                             else f"{ENGINES[self.engine_id]} · non préparé · téléchargement explicite nécessaire")
+        self.playback = Playback(
+            ManagedSpeechEngine(self.models, self.engine_id),
+            lambda message: self.events.error.emit(message) if generation == self.tts_generation and not self.shutting_down else None,
+            lambda epoch, elapsed: self.events.audio.emit(generation, epoch, elapsed) if not self.shutting_down else None,
+            warmup=self.voices,
+            ready=lambda: self.events.ready.emit(generation) if not self.shutting_down else None)
+        self.playback.volume = self.store.settings.volume
+
+    def engine_ready(self, generation):
+        if generation != self.tts_generation or self.shutting_down or self.preparing_engine:
+            return
+        self.tts_ready = bool(self.voices)
+        self.preview_button.setEnabled(self.tts_ready)
+        if self.tts_ready:
+            self.metrics.setText(f"{ENGINES[self.engine_id]} · prêt · synthèse hors ligne")
+
+    def metrics_progress(self, message):
+        if not self.shutting_down:
+            self.metrics.setText(message[-300:])
+
+    def prepare_engine(self):
+        if self.preparing_engine:
+            return
+        self.preparing_engine = True
+        self.tts_generation += 1
+        engine, generation = self.engine_id, self.tts_generation
+        self.playback.close()
+        self.engine_combo.setEnabled(False)
+        self.prepare_engine_button.setEnabled(False)
+        self.tts_ready = False
+        self.preview_button.setEnabled(False)
+        self.metrics.setText("Préparation explicite · installation isolée et téléchargement des poids…")
+        script = "prepare_models.py" if engine == "piper" else "prepare_neural.py"
+        command = [sys.executable, "-u", str(Path(__file__).resolve().parents[1] / "scripts" / script),
+                   "--model-dir", str(self.models)]
+        if engine != "piper":
+            command += ["--engine", engine]
+        def work():
+            try:
+                with self.preparation_lock:
+                    if self.shutting_down:
+                        return
+                    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                               text=True, bufsize=1, start_new_session=True)
+                    self.preparation_process = process
+                output = ""
+                for line in process.stdout:
+                    output = (output + line)[-3000:]
+                    if not self.shutting_down:
+                        self.events.preparation_progress.emit(line.strip())
+                process.stdout.close()
+                success = process.wait() == 0
+                message = "Modèles préparés et vérifiés." if success else output
+            except Exception as exc:
+                success, message = False, str(exc)
+            finally:
+                with self.preparation_lock:
+                    self.preparation_process = None
+            if not self.shutting_down:
+                self.events.engine_prepared.emit(generation, success, message)
+        threading.Thread(target=work, daemon=True, name="Préparation vocale").start()
+
+    def engine_prepared(self, generation, success, message):
+        self.preparing_engine = False
+        self.engine_combo.setEnabled(True)
+        self.prepare_engine_button.setEnabled(True)
+        if generation != self.tts_generation:
+            return
+        self.status.setText(message if success else f"Préparation impossible : {message}")
+        if success:
+            self.reload_engine()
+        else:
+            self.metrics.setText("Moteur non prêt · préparation échouée · aucun remplacement automatique")
 
     def refresh_clients(self):
         def work():
@@ -287,13 +420,13 @@ class MainWindow(QMainWindow):
             self.last_dialogue = value
             self.npc.setText(f"PNJ : {value.npc}")
             self.text.setPlainText(value.text)
-            key = self.store.voice_for(value.npc, list(self.voice_map)) if self.voices else ""
+            key = self.store.voice_for(value.npc, list(self.voice_map), self.engine_id) if self.voices else ""
             self.voice_combo.blockSignals(True)
             self.voice_combo.setCurrentIndex(self.voice_combo.findData(key))
             self.voice_combo.blockSignals(False)
             self.metrics.setText("Réplique reçue · synthèse / audio : en attente")
             self.status.setText(f"Dialogue · {value.npc}")
-            if self.automatic.isChecked() and self.voices:
+            if self.automatic.isChecked() and self.tts_ready:
                 self.speak_dialogue()
         elif kind == "opened":
             self.npc.setText(f"PNJ : {value}")
@@ -315,12 +448,15 @@ class MainWindow(QMainWindow):
         self.text.clear()
 
     def speak_dialogue(self):
+        if not self.tts_ready:
+            self.show_error("Le moteur vocal n’est pas prêt. Attendez le chargement ou préparez ses modèles.")
+            return
         dialogue = self.last_dialogue
         if not dialogue or not dialogue.text.strip():
             self.show_error("Aucun dialogue reçu à lire.")
             return
         try:
-            voice = self.voice_map[self.store.voice_for(dialogue.npc, list(self.voice_map))]
+            voice = self.voice_map[self.store.voice_for(dialogue.npc, list(self.voice_map), self.engine_id)]
             self.playback.submit([Utterance(dialogue.text, voice)], self.speed.value())
         except (ValueError, KeyError) as exc:
             self.show_error(str(exc))
@@ -328,16 +464,19 @@ class MainWindow(QMainWindow):
     def replay(self):
         self.speak_dialogue()
 
-    def audio_started(self, epoch, elapsed):
-        if epoch == self.playback.epoch:
+    def audio_started(self, generation, epoch, elapsed):
+        if generation == self.tts_generation and epoch == self.playback.epoch:
             self.metrics.setText(f"Synthèse → lancement audio : {elapsed * 1000:.0f} ms")
 
     def assign_voice(self, _):
         if self.last_dialogue and self.voice_combo.currentData():
             self.playback.cancel()
-            self.store.assign(self.last_dialogue.npc, self.voice_combo.currentData())
+            self.store.assign(self.last_dialogue.npc, self.voice_combo.currentData(), self.engine_id)
 
     def preview_voice(self):
+        if not self.tts_ready:
+            self.show_error("Le moteur vocal n’est pas encore prêt.")
+            return
         voice = self.voice_map.get(self.voice_combo.currentData())
         if voice:
             self.playback.submit([Utterance("Bonjour, je vous accompagne dans le Monde des Douze. Écoutez ma voix avant de me choisir.", voice)], self.speed.value())
@@ -376,6 +515,13 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.shutting_down = True
+        with self.preparation_lock:
+            process = self.preparation_process
+            if process is not None and process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
         self.stop()
         self.hotkeys.close()
         self.playback.close()

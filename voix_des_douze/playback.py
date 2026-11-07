@@ -34,7 +34,7 @@ class Playback:
         self.process = None
         self.closed = False
         self.volume = 0.8
-        self.threads = [threading.Thread(target=self._generate, daemon=True, name="Piper"),
+        self.threads = [threading.Thread(target=self._generate, daemon=True, name="Synthèse"),
                         threading.Thread(target=self._play, daemon=True, name="Audio")]
         for thread in self.threads:
             thread.start()
@@ -44,6 +44,9 @@ class Playback:
             self.epoch += 1
             self.pending = None
             self.audio.clear()
+            abort = getattr(self.engine, "abort", None)
+            if abort is not None:
+                abort()
             if self.process is not None and self.process.poll() is None:
                 try:
                     self.process.kill()
@@ -80,13 +83,19 @@ class Playback:
                         with self.condition:
                             if epoch != self.epoch or self.closed:
                                 break
-                        for chunk in self.engine.synthesize(utterance.text, utterance.voice, speed):
-                            with self.condition:
-                                self.condition.wait_for(lambda: self.closed or epoch != self.epoch or len(self.audio) < 2)
-                                if self.closed or epoch != self.epoch:
-                                    break
-                                self.audio.append((epoch, chunk, submitted))
-                                self.condition.notify_all()
+                            chunks = self.engine.synthesize(utterance.text, utterance.voice, speed)
+                        try:
+                            for chunk in chunks:
+                                with self.condition:
+                                    self.condition.wait_for(lambda: self.closed or epoch != self.epoch or len(self.audio) < 2)
+                                    if self.closed or epoch != self.epoch:
+                                        break
+                                    self.audio.append((epoch, chunk, submitted))
+                                    self.condition.notify_all()
+                        finally:
+                            close = getattr(chunks, "close", None)
+                            if close is not None:
+                                close()
             except Exception as exc:
                 with self.condition:
                     if epoch == self.epoch:
@@ -129,5 +138,8 @@ class Playback:
         with self.condition:
             self.closed = True
             self.cancel()
+        close = getattr(self.engine, "close", None)
+        if close is not None:
+            close()
         for thread in self.threads:
             thread.join(timeout=5)

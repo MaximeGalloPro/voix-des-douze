@@ -46,3 +46,24 @@ def test_settings_migration_preserves_voices_and_original_file(tmp_path):
     assert not {"regions", "read_responses", "response_voice"}.intersection(json.loads(path.read_text()))
     Store(path)
     assert json.loads(path.with_name("settings-before-network.json").read_text()) == original
+
+
+def test_engine_assignments_and_defaults_survive_round_trip(tmp_path):
+    path = tmp_path / "settings.json"
+    store = Store(path)
+    for engine, voices in (("piper", ["siwis", "tom"]), ("sopro", ["sopro:a", "sopro:b"]),
+                           ("pocket", ["pocket:a", "pocket:b"])):
+        store.assign("Kerubim Crépin", voices[1], engine)
+        store.set_default(engine, voices[0])
+        assert store.voice_for("Kerubim Crépin", voices, engine) == voices[1]
+        assert store.voice_for("", voices, engine) == voices[0]
+    store.settings.engine = "pocket"
+    store.save()
+    reopened = Store(path)
+    assert reopened.settings.engine == "pocket"
+    assert reopened.voice_for("KERUBIM CRÉPIN", ["siwis", "tom"]) == "tom"
+    assert reopened.voice_for("Kerubim Crépin", ["sopro:a", "sopro:b"], "sopro") == "sopro:b"
+    assert reopened.voice_for("Kerubim Crépin", ["pocket:a", "pocket:b"], "pocket") == "pocket:b"
+    assert reopened.default_for("piper") == "siwis"
+    assert reopened.default_for("sopro") == "sopro:a"
+    assert reopened.default_for("pocket") == "pocket:a"

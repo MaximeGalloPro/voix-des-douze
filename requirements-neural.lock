@@ -1,4 +1,4 @@
-# Environnement isolé .venv-neural ; macOS arm64 / Python 3.14 vérifié.
+# Environnement isolé .venv-neural ; macOS arm64 / Python 3.13 et 3.14 vérifiés.
 # Sopro 2.2.0 et Pocket 4.0.1, sans extras GPU/quantification.
 annotated-doc==0.0.5
 annotated-types==0.8.0

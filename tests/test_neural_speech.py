@@ -6,6 +6,7 @@ sont explicitement ignorés ; VOIX_REQUIRE_NEURAL=1 transforme ce manque en éch
 Aucun faux moteur ni résultat PCM préfabriqué.
 """
 import math
+import importlib.util
 import os
 import socket
 from array import array
@@ -58,6 +59,10 @@ def test_wrong_voice_rejected_before_loading(tmp_path, engine_name, change):
 
 @pytest.fixture(scope="module", params=("sopro", "pocket"))
 def real_engine(request):
+    if importlib.util.find_spec("torch") is None:
+        if os.environ.get("VOIX_REQUIRE_NEURAL") == "1":
+            pytest.fail("Exécuter les tests neuronaux avec .venv-neural/bin/python.")
+        pytest.skip("Runtime isolé requis : .venv-neural/bin/python -m pytest tests/test_neural_speech.py")
     name = request.param
     directory = Path(os.environ.get("VOIX_MODEL_DIR", Path.home() / "Library/Caches/VoixDesDouze/models"))
     voices = available_voices(directory, name)

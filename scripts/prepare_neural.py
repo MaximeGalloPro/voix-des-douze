@@ -143,7 +143,8 @@ def main() -> None:
     parser.add_argument("--verify-only", action="store_true")
     args = parser.parse_args()
     try:
-        bootstrap()
+        if not args.verify_only:
+            bootstrap()
         prepare(args.model_dir, args.engine, args.verify_only)
     except (OSError, ValueError, RuntimeError, importlib.metadata.PackageNotFoundError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Préparation neuronale impossible : {error}\n")

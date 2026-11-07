@@ -29,6 +29,9 @@ class Settings:
     speed: float = 1.0
     default_voice: str = ""
     assignments: dict[str, str] = field(default_factory=dict)
+    engine: str = "piper"
+    engine_defaults: dict[str, str] = field(default_factory=dict)
+    engine_assignments: dict[str, dict[str, str]] = field(default_factory=dict)
     shortcuts: dict[str, str] = field(default_factory=lambda: {
         "toggle": "F6", "stop": "F7", "replay": "F8"})
 
@@ -51,6 +54,12 @@ class Store:
                     raise ValueError("Volume ou vitesse hors limites")
                 if not all(isinstance(v, dict) for v in (s.assignments, s.shortcuts)):
                     raise ValueError("Configuration invalide")
+                if s.engine not in ("piper", "sopro", "pocket"):
+                    raise ValueError("Moteur vocal inconnu")
+                if not isinstance(s.engine_defaults, dict) or not isinstance(s.engine_assignments, dict):
+                    raise ValueError("Configuration des moteurs invalide")
+                if not all(isinstance(v, dict) for v in s.engine_assignments.values()):
+                    raise ValueError("Attributions des moteurs invalides")
                 if migrated:
                     backup = self.path.with_name(self.path.stem + "-before-network.json")
                     if not backup.exists():
@@ -73,26 +82,37 @@ class Store:
             finally:
                 Path(temp).unlink(missing_ok=True)
 
-    def voice_for(self, name: str, choices: list[str]) -> str:
+    def voice_for(self, name: str, choices: list[str], engine: str = "piper") -> str:
         if not choices:
             raise ValueError("Aucune voix préparée. Lancez Installer.command.")
         with self.lock:
-            fallback = self.settings.default_voice
+            fallback = self.default_for(engine)
             if fallback not in choices:
                 fallback = choices[0]
             key = character_key(name)
             if not key:
                 return fallback
-            assigned = self.settings.assignments.get(key)
+            assignments = self.settings.assignments if engine == "piper" else self.settings.engine_assignments.setdefault(engine, {})
+            assigned = assignments.get(key)
             if assigned not in choices:
-                used = list(self.settings.assignments.values())
+                used = list(assignments.values())
                 assigned = min(choices, key=lambda v: used.count(v))
-                self.settings.assignments[key] = assigned
+                assignments[key] = assigned
                 self.save()
             return assigned
 
-    def assign(self, name: str, voice: str):
+    def default_for(self, engine: str) -> str:
+        return self.settings.default_voice if engine == "piper" else self.settings.engine_defaults.get(engine, "")
+
+    def set_default(self, engine: str, voice: str):
+        if engine == "piper":
+            self.settings.default_voice = voice
+        else:
+            self.settings.engine_defaults[engine] = voice
+
+    def assign(self, name: str, voice: str, engine: str = "piper"):
         with self.lock:
             if character_key(name):
-                self.settings.assignments[character_key(name)] = voice
+                assignments = self.settings.assignments if engine == "piper" else self.settings.engine_assignments.setdefault(engine, {})
+                assignments[character_key(name)] = voice
                 self.save()

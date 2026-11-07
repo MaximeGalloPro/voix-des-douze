@@ -118,3 +118,44 @@ Rejeu hors ligne de la capture Dofus réelle conservée : avant correction, accu
 Vérification ciblée : `.venv/bin/python -m pytest tests/test_network.py tests/test_catalog.py tests/test_capture_lifecycle.py -q` : **37 tests réussis en 6,10 s**. Nouveaux cas synthétiques : zéro et changement de montant, anti-répétition, référence répétée, valeurs manquantes/surnuméraires ou invalides, type inconnu, marqueurs absents ou incohérents, annulation et reprise sur une réplique valide. Ces cas synthétiques ne sont pas présentés comme des sessions de jeu.
 
 Après relance de l’application normale du Dock, l’utilisateur a testé l’accueil du banquier dans Dofus et confirmé **« Oui, texte et voix corrects »**, montant conforme à celui affiché par le jeu. La capture historique et cet essai en direct sont deux vérifications distinctes. Les autres types de paramètres restent refusés ; aucune nouvelle mesure de latence ni validation de tous les banquiers.
+
+## Sélecteur Piper / Sopro / Pocket — 7 novembre 2026
+
+Les trois moteurs sont préparés et réellement exécutés sur ce Mac M4 / 32 Go. Piper reste dans `.venv` (Python 3.13.8, Piper 1.8.0). Sopro 2.2.0 et Pocket TTS 4.0.1 français utilisent `.venv-neural` (Python 3.13.8 dans le workspace principal ; dépendances également exercées avec Python 3.14 dans le workspace d’intégration). `pip check` : aucune dépendance cassée. L’accès aux poids français Pocket a été débloqué après acceptation des conditions par l’utilisateur ; aucun jeton n’est conservé dans le dépôt.
+
+### Suite finale exécutée
+
+`./Tester.command -q` :
+
+- **72 tests principaux réussis en 59,98 s**, dont les douze tests Piper existants, seize cas de vrais workers paramétrés Piper/Sopro/Pocket, la persistance par moteur et le parcours Qt réel ;
+- **31 tests neuronaux réussis en 15,25 s**, contrats et véritables synthèses Sopro/Pocket avec leurs quatre références, préchauffage, signal PCM 24 kHz mono 16 bits non silencieux, durées cohérentes et vitesses 0,5×/2× ;
+- aucun test ignoré dans cette exécution.
+
+Les workers vocaux interdisent les connexions Python avant les imports lourds. Les tests neuronaux bloquent également les sockets pendant les imports et l’inférence directe. Il s’agit d’un garde-fou Python, pas d’une coupure réseau système.
+
+Les tests de cycle de vie couvrent la conservation du modèle au repos, sa fermeture, l’annulation avant premier son, les segments déjà tamponnés et la reprise. Une revue a reproduit un défaut intermédiaire : fermer un itérateur après son premier segment laissait deux anciens segments accessibles à une requête vide suivante. Le correctif ferme et récolte tout worker dont la réponse n’a pas été entièrement consommée. Une révision d’annulation capturée avant l’itération ferme également la course entre validation de l’époque et démarrage du calcul. Deux régressions sont conservées et exécutées pour chacun des trois moteurs ; les anciens segments ne contaminent plus la nouvelle requête.
+
+### Parcours natif hors tests
+
+Une vraie fenêtre PySide6/Cocoa a parcouru **Piper → Sopro → Pocket → Piper**, avec réglages temporaires, une réplique française de vérification locale et véritable `afplay` à volume 0,10. Chaque ancien processus vocal était terminé avant le suivant. Les réglages personnels et la capture Dofus n’ont pas été modifiés ou démarrés.
+
+Mesures ponctuelles de ce parcours :
+
+| Moteur | Sélection → prêt (chargement + amorçage) | Soumission → lancement afplay |
+| --- | ---: | ---: |
+| Piper initial | 2,518 s | 385 ms |
+| Sopro | 4,457 s | 816 ms |
+| Pocket français | 5,091 s | 508 ms |
+| Retour Piper | 2,330 s | 320 ms |
+
+Un timer Qt de 20 ms est resté actif pendant chaque chargement ; plus grand intervalle observé : 30,03 ms. Les gestionnaires de sélection ont rendu la main en moins de 30 ms sur ce parcours. Ces observations ne constituent ni un benchmark prolongé ni une garantie universelle de latence. Le lancement d’afplay n’est pas le premier son physique au haut-parleur.
+
+Le bouton **Télécharger / préparer** de Pocket a également été cliqué pendant le chargement initial : vrai sous-processus de préparation, réutilisation des fichiers vérifiés, nouveau préchauffage et état **Prêt** final. Les callbacks « prêt » obsolètes ont été refusés ; aucun état prêt n’a été observé pendant la préparation (352 ticks Qt). Une préparation invalide la génération précédente et ferme son worker.
+
+Traces et capture hors Git : `.context/three-engines-smoke.json`, `.context/preparation-smoke.json`, `.context/three-engines-ui.png`. Huit WAV supplémentaires et leurs mesures, produits pendant l’intégration puis conservés dans ce workspace : `.context/neural-sopro/` et `.context/neural-pocket/`. Ils ne sont pas des enregistrements de jeu. Les deux commandes `scripts/prepare_neural.py --engine … --verify-only` ont vérifié les SHA256 localement sans installation ni téléchargement.
+
+### Limites propres aux nouveaux moteurs
+
+Les références Sopro/Pocket sont uniquement les quatre WAV synthétiques Piper existants, pas des enregistrements humains. Les voix restent à comparer à l’écoute ; la production de PCM n’est pas une certification de prononciation, de fidélité vocale ou d’absence d’omission. Aucun nouveau test Dofus en direct n’a été effectué pour Sopro/Pocket.
+
+L’adaptateur livre une phrase entière avant son premier segment ; il n’expose pas le streaming acoustique natif. Les vitesses Sopro/Pocket rééchantillonnent l’audio et changent aussi la hauteur. Après annulation d’un calcul actif, le modèle doit être rechargé pour la prochaine lecture ; un moteur au repos reste résident. Un seul processus moteur est conservé à la fois.
