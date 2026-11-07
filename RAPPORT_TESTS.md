@@ -58,7 +58,7 @@ L’accès BPF est refusé avec les droits utilisateur ordinaires sur cette mach
 ## Non validé / limites connues
 
 - autres PNJ en jeu réel, plusieurs comptes simultanés, reconnexions réelles et longues sessions CPU/mémoire/autonomie ; les tests de transitions et d’isolation ne remplacent pas ces essais ;
-- dialogues paramétrés : explicitement refusés pour éviter de lire des noms/valeurs non résolus ;
+- dialogues paramétrés hors prix bancaire `PB` : explicitement refusés pour éviter de lire des noms/valeurs non résolus ;
 - texte des choix du joueur : non affiché/non lu, seul l’événement de réponse est utilisé pour annuler ;
 - version différente de 3.7.13.17 et interfaces de capture autres qu’Ethernet/Wi-Fi : non prises en charge ; IPv6 vérifié hors ligne, pas encore en capture réelle ;
 - lecture démarrée au milieu d’une carte : un changement de carte est nécessaire pour observer les identités, aucun ancien état de session n’est réutilisé ;
@@ -108,3 +108,13 @@ L’accueil 48366 contient `#1 Kamas` et un paramètre `PB` : il reste explicite
 Après relance de l’application normale du Dock, synchronisation de la carte et sélection de la réponse ci-dessus, l’utilisateur a confirmé **« Texte et voix présents »** pour « Vous pouvez déposer des kamas… ». Il s’agit d’un essai Dofus réel, pas d’un test synthétique. Aucune nouvelle mesure de latence audio ni validation des dialogues paramétrés.
 
 Commandes exécutées : `.venv/bin/python scripts/prepare_network.py --verify-only`, puis `.venv/bin/python -m pytest tests/test_network.py tests/test_catalog.py tests/test_capture_lifecycle.py -q` : **24 tests réussis en 4,78 s**. Le test vocal de vitesse précédemment en échec n’a pas été relancé. Les fenêtres et scripts temporaires de diagnostic ont été arrêtés ; l’application normale est laissée ouverte pour l’utilisateur.
+
+## Résolution du prix bancaire `PB`
+
+Le rendu remplace les marqueurs numérotés par les valeurs reçues dans le champ 2 de `ilf`, uniquement pour le type vérifié `PB`. Le montant doit contenir des chiffres ASCII, sans signe ni séparateur ; zéro est accepté. Nombre de paramètres et ensemble des marqueurs doivent correspondre exactement. Les références répétées sont remplacées sans approximation. Les types inconnus et les données incohérentes annulent la lecture précédente, signalent un refus et n’empêchent pas la réception d’une réplique valide ensuite. Aucun calcul de tarif, changement de catalogue ou OCR.
+
+Rejeu hors ligne de la capture Dofus réelle conservée : avant correction, accueil 48366 refusé et aucun accueil émis ; après correction, valeur réseau exacte `b'0'`, PNJ **Essiac d’Engrape**, phrase résolue « chaque consultation de votre compte vous coûtera 0 Kamas. », un accueil émis, puis réplique suivante toujours reconnue. Le montant provient de cette capture, pas d’une valeur codée en dur.
+
+Vérification ciblée : `.venv/bin/python -m pytest tests/test_network.py tests/test_catalog.py tests/test_capture_lifecycle.py -q` : **37 tests réussis en 6,10 s**. Nouveaux cas synthétiques : zéro et changement de montant, anti-répétition, référence répétée, valeurs manquantes/surnuméraires ou invalides, type inconnu, marqueurs absents ou incohérents, annulation et reprise sur une réplique valide. Ces cas synthétiques ne sont pas présentés comme des sessions de jeu.
+
+Après relance de l’application normale du Dock, l’utilisateur a testé l’accueil du banquier dans Dofus et confirmé **« Oui, texte et voix corrects »**, montant conforme à celui affiché par le jeu. La capture historique et cet essai en direct sont deux vérifications distinctes. Les autres types de paramètres restent refusés ; aucune nouvelle mesure de latence ni validation de tous les banquiers.

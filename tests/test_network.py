@@ -96,6 +96,51 @@ def test_unknown_or_parameterized_text_cancels_instead_of_speaking_placeholder()
     assert events[-1][0] == "unsupported"
 
 
+def test_bank_price_changes_are_read_without_repeating_identical_greeting():
+    state, events = make_conversation()
+    state.catalog.texts["36"] = {
+        "text": "<b>Bonjour.</b> Le coffre coûte #1 Kamas. Prix confirmé : #1.",
+        "params": ["PB"],
+    }
+    state.handle("server", "jnj", map_body())
+    state.handle("server", "ilx", opened())
+    for price in (b"0", b"0", b"27"):
+        state.handle("server", "ilf", blob(2, price) + num(3, 36))
+    assert [(value.npc, value.text) for kind, value in events if kind == "dialogue"] == [
+        ("Bûcheron", "Bonjour. Le coffre coûte 0 Kamas. Prix confirmé : 0."),
+        ("Bûcheron", "Bonjour. Le coffre coûte 27 Kamas. Prix confirmé : 27."),
+    ]
+
+
+@pytest.mark.parametrize("text,kinds,parameters", [
+    ("Prix #1.", ["PB"], []),
+    ("Prix #1.", ["PB"], [b"12", b"34"]),
+    ("Prix #1.", ["PB"], [b"-12"]),
+    ("Prix #1.", ["PB"], [b"1 234"]),
+    ("Prix #1.", ["PB"], [b"\xff"]),
+    ("Prix #1.", ["PB"], [b"<b>12</b>"]),
+    ("Bonjour #1.", ["PN"], [b"PlayerName"]),
+    ("Prix #0.", ["PB"], [b"12"]),
+    ("Prix #01.", ["PB"], [b"12"]),
+    ("Prix #2.", ["PB"], [b"12"]),
+    ("Prix fixe.", ["PB"], [b"12"]),
+    ("Prix #1.", [], []),
+])
+def test_unresolved_or_invalid_parameters_cancel_previous_reading(text, kinds, parameters):
+    state, events = make_conversation()
+    state.catalog.texts["36"] = {"text": text, "params": kinds}
+    state.handle("server", "jnj", map_body())
+    state.handle("server", "ilx", opened())
+    state.handle("server", "ilf", num(3, 33))
+    state.handle("server", "ilf", b"".join(blob(2, p) for p in parameters) + num(3, 36))
+    assert [value.text for kind, value in events if kind == "dialogue"] == ["Bonjour, voyageur."]
+    assert events[-2][0] == "invalidate"
+    assert events[-1][0] == "unsupported"
+    state.handle("server", "ilf", num(3, 34))
+    assert events[-1][0] == "dialogue"
+    assert events[-1][1].text == "Votre compte contient 12 kamas."
+
+
 def test_tcp_reassembly_handles_overlap_retransmit_reordering_and_sequence_wrap():
     received = []
     stream = TCPStream("server", lambda direction, key, body: received.append((key, body)))

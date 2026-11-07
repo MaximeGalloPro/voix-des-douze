@@ -120,6 +120,26 @@ def unwrap(data, depth=0):
     return None
 
 
+def render_message(entry, parameters):
+    """Resolve verified parameter types only; never guess a local reference."""
+    kinds = entry["params"]
+    if len(parameters) != len(kinds):
+        raise ProtocolError("Nombre de paramètres du dialogue incohérent ; réplique non lue.")
+    values = {}
+    for index, (kind, raw) in enumerate(zip(kinds, parameters), 1):
+        # PB: bank consultation price, observed as decimal ASCII in ilf field 2.
+        if kind != "PB":
+            raise ProtocolError(f"Type de paramètre non pris en charge : {kind} ; réplique non lue.")
+        if not re.fullmatch(rb"[0-9]+", raw):
+            raise ProtocolError("Montant bancaire invalide ; réplique non lue.")
+        values[str(index)] = raw.decode("ascii")
+    text = html.unescape(re.sub(r"<[^>]+>", "", entry["text"])).strip()
+    references = set(re.findall(r"#([0-9]+)", text))
+    if references != values.keys():
+        raise ProtocolError("Marqueurs de paramètres du dialogue incohérents ; réplique non lue.")
+    return re.sub(r"#([0-9]+)", lambda match: values[match[1]], text)
+
+
 class Conversation:
     """État par flux : carte -> identité -> ouverture -> répliques -> réponse/fin."""
     def __init__(self, catalog: Catalog, emit: Callable[[str, object], None]):
@@ -181,11 +201,12 @@ class Conversation:
                 self.emit("unsupported", "Réplique absente du catalogue de cette version.")
                 return
             parameters = [value for number, wire, value in body if number == 2 and wire == 2]
-            if parameters or entry["params"]:
+            try:
+                text = render_message(entry, parameters)
+            except ProtocolError as exc:
                 self.invalidate()
-                self.emit("unsupported", "Dialogue à paramètres non pris en charge par ce mode expérimental.")
+                self.emit("unsupported", str(exc))
                 return
-            text = html.unescape(re.sub(r"<[^>]+>", "", entry["text"])).strip()
             if not text:
                 self.invalidate()
                 return
