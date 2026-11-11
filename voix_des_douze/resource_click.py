@@ -15,6 +15,26 @@ class Point(C.Structure):
     _fields_ = [("x", C.c_double), ("y", C.c_double)]
 
 
+def check_click_window(rows, pid, point, geometry):
+    # WindowServer also lists auxiliary title bars outside the screen at layer 0.
+    # Only a window covering the click can intercept it; preserve front-to-back order.
+    front = next((row for row in rows
+                  if row.get("kCGWindowLayer") == 0
+                  and (bounds := row.get("kCGWindowBounds", {}))
+                  and bounds.get("X", 0) <= point.x() < bounds.get("X", 0) + bounds.get("Width", 0)
+                  and bounds.get("Y", 0) <= point.y() < bounds.get("Y", 0) + bounds.get("Height", 0)), {})
+    if front.get("kCGWindowOwnerPID") != pid:
+        owner = front.get("kCGWindowOwnerName", "inconnue")
+        raise RuntimeError(f"Premier clic ignoré : fenêtre devant la cible : {owner}. Remettez le client Dofus sélectionné au premier plan.")
+    bounds = front["kCGWindowBounds"]
+    expected = {"X": geometry.x(), "Y": geometry.y(),
+                "Width": geometry.width(), "Height": geometry.height()}
+    if any(abs(bounds.get(key, float("inf")) - value) > 2 for key, value in expected.items()):
+        actual = ", ".join(f"{key}={bounds.get(key, '?')}" for key in expected)
+        target = ", ".join(f"{key}={value}" for key, value in expected.items())
+        raise RuntimeError(f"Premier clic ignoré : fenêtre Dofus ({actual}) différente de l’écran réglé ({target}). Placez Dofus en plein écran sur cet écran.")
+
+
 class MacClick:
     def __init__(self):
         self.lib = None
@@ -45,14 +65,7 @@ class MacClick:
             if not data:
                 raise RuntimeError("Vérification de la fenêtre Dofus impossible.")
             rows = plistlib.loads(C.string_at(self.lib.CFDataGetBytePtr(data), self.lib.CFDataGetLength(data)))
-            # The frontmost normal window must be this client and fill the calibrated screen.
-            front = next((row for row in rows if row.get("kCGWindowLayer") == 0), {})
-            bounds = front.get("kCGWindowBounds", {})
-            expected = {"X": geometry.x(), "Y": geometry.y(),
-                        "Width": geometry.width(), "Height": geometry.height()}
-            if (front.get("kCGWindowOwnerPID") != pid
-                    or any(abs(bounds.get(key, float("inf")) - value) > 2 for key, value in expected.items())):
-                raise RuntimeError("Premier clic ignoré : placez le client Dofus sélectionné en plein écran sur l’écran réglé.")
+            check_click_window(rows, pid, point, geometry)
         finally:
             if data:
                 self.lib.CFRelease(data)

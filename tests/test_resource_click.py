@@ -100,3 +100,33 @@ def test_new_map_replaces_pending_target(assist):
     assert wait_for_timer(c)
     assert len(clicks) == 1
     assert "case 281" in w.status.text()
+
+
+def test_auxiliary_titlebar_does_not_hide_fullscreen_click_target():
+    from PySide6.QtCore import QPointF, QRect
+    from voix_des_douze.resource_click import check_click_window
+
+    rows = [
+        {"kCGWindowLayer": 0, "kCGWindowOwnerPID": 123,
+         "kCGWindowBounds": {"X": 0, "Y": -32, "Width": 2048, "Height": 32}},
+        {"kCGWindowLayer": 0, "kCGWindowOwnerPID": 123,
+         "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 2048, "Height": 1280}},
+    ]
+    geometry = QRect(0, 0, 2048, 1280)
+    point = QPointF(1000, 600)
+    check_click_window(rows, 123, point, geometry)
+
+    # A different app covering the target must still block the click.
+    rows.insert(0, {"kCGWindowLayer": 0, "kCGWindowOwnerPID": 456,
+                    "kCGWindowOwnerName": "Autre application",
+                    "kCGWindowBounds": {"X": 900, "Y": 500, "Width": 200, "Height": 200}})
+    with pytest.raises(RuntimeError, match="Autre application"):
+        check_click_window(rows, 123, point, geometry)
+
+    rows.pop(0)
+    rows[1]["kCGWindowBounds"]["Height"] = 1100
+    with pytest.raises(RuntimeError, match="Height=1100"):
+        check_click_window(rows, 123, point, geometry)
+
+    with pytest.raises(RuntimeError, match="inconnue"):
+        check_click_window([], 123, point, geometry)
