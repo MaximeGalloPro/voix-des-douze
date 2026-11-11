@@ -152,6 +152,13 @@ class MainWindow(QMainWindow):
             "Plein écran, repères réglés et autorisation Accessibilité requis. Aucun pilotage du trajet.")
         self.first_resource.toggled.connect(self.toggle_first_resource)
         resource_layout.addWidget(self.first_resource)
+        self.resource_click_debug = QCheckBox("Debug clic · touche : (session uniquement)")
+        self.resource_click_debug.toggled.connect(self.toggle_resource_click_debug)
+        resource_layout.addWidget(self.resource_click_debug)
+        self.resource_click_debug_status = QLabel("Debug désactivé · aucun journal de clic")
+        self.resource_click_debug_status.setWordWrap(True)
+        self.resource_click_debug_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        resource_layout.addWidget(self.resource_click_debug_status)
         layout.addWidget(resource_box)
         self.npc = QLabel("PNJ : —")
         self.npc.setStyleSheet("font-size:20px;font-weight:600;color:#edce88;padding-top:8px")
@@ -700,8 +707,32 @@ class MainWindow(QMainWindow):
             self.store.save()
             self.status.setText(" ; ".join(errors) if errors else "Raccourcis globaux enregistrés (Contrôle + Option).")
 
+    def toggle_resource_click_debug(self, enabled):
+        try:
+            if enabled:
+                self.resource_click.start_debug()
+                binding = self.hotkeys.set_resource_debug(True)
+                self.resource_click.record("raccourci enregistré", touche=":", liaison=binding)
+                self.resource_click_debug_status.setText(
+                    f"Touche : → première ressource récoltable · journal : {self.resource_click.debug_path}")
+            else:
+                self.hotkeys.set_resource_debug(False)
+                self.resource_click.record("fin")
+                self.resource_click.stop_debug()
+                self.resource_click_debug_status.setText(
+                    f"Debug arrêté · journal conservé : {self.resource_click.debug_path}")
+        except (RuntimeError, OSError) as exc:
+            self.hotkeys.set_resource_debug(False)
+            self.resource_click.stop_debug()
+            self.resource_click_debug.blockSignals(True)
+            self.resource_click_debug.setChecked(False)
+            self.resource_click_debug.blockSignals(False)
+            self.resource_click_debug_status.setText(f"Debug indisponible : {exc}")
+            self.show_error(str(exc))
+
     def hotkey(self, action):
-        {"toggle": self.toggle_pause, "stop": self.stop, "replay": self.replay}[action]()
+        {"toggle": self.toggle_pause, "stop": self.stop, "replay": self.replay,
+         "resource_debug": self.resource_click.manual_click}[action]()
 
     def show_error(self, message):
         self.status.setText(f"Attention : {message}")
@@ -722,6 +753,8 @@ class MainWindow(QMainWindow):
                 except ProcessLookupError:
                     pass
         self.stop()
+        self.resource_click.record("fin", raison="fermeture")
+        self.resource_click.stop_debug()
         self.hotkeys.close()
         self.playback.close()
         self.resource_alert.close()

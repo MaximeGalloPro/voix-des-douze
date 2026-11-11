@@ -2,13 +2,19 @@
 from __future__ import annotations
 
 import ctypes as C
+import json
+import os
+from pathlib import Path
 import plistlib
 import random
 import sys
+import tempfile
+import time
 
 from PySide6.QtCore import QObject, QPointF, QTimer
 
 from .overlay import cell_point, fullscreen_transform, screen_key
+from .settings import data_directory
 
 
 class Point(C.Structure):
@@ -36,7 +42,8 @@ def check_click_window(rows, pid, point, geometry):
 
 
 class MacClick:
-    def __init__(self):
+    def __init__(self, trace=lambda *args, **fields: None):
+        self.trace = trace
         self.lib = None
         if sys.platform == "darwin":
             self.lib = C.CDLL("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
@@ -55,7 +62,9 @@ class MacClick:
             self.lib.CFDataGetBytePtr.restype = C.c_void_p
 
     def __call__(self, pid, point, geometry):
-        if self.lib is None or not self.lib.AXIsProcessTrusted():
+        trusted = self.lib is not None and self.lib.AXIsProcessTrusted()
+        self.trace("accessibilité", autorisé=trusted)
+        if not trusted:
             raise RuntimeError("Autorisez l’application dans Réglages Système → Confidentialité et sécurité → Accessibilité.")
         windows = self.lib.CGWindowListCopyWindowInfo(17, 0)
         data = None
@@ -65,6 +74,9 @@ class MacClick:
             if not data:
                 raise RuntimeError("Vérification de la fenêtre Dofus impossible.")
             rows = plistlib.loads(C.string_at(self.lib.CFDataGetBytePtr(data), self.lib.CFDataGetLength(data)))
+            self.trace("fenêtres", fenêtres=[
+                {key: row.get(key) for key in ("kCGWindowOwnerPID", "kCGWindowLayer", "kCGWindowBounds")}
+                for row in rows])
             check_click_window(rows, pid, point, geometry)
         finally:
             if data:
@@ -79,6 +91,7 @@ class MacClick:
             # Target the selected process, never the global event stream.
             self.lib.CGEventPostToPid(pid, down)
             self.lib.CGEventPostToPid(pid, up)
+            self.trace("macOS", résultat="bouton gauche pressé puis relâché, événements postés au PID")
         finally:
             for event in (down, up):
                 if event:
@@ -89,32 +102,85 @@ class FirstResourceClick(QObject):
     def __init__(self, window, send=None):
         super().__init__(window)
         self.window = window
-        self.send = send if send is not None else MacClick()
+        self.file = None
+        self.debug_path = None
+        self.send = send if send is not None else MacClick(self.record)
         self.snapshot = None
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(700)
         self.timer.timeout.connect(self.click)
 
+    def record(self, stage, **fields):
+        if self.file is None:
+            return
+        try:
+            if self.file.tell() >= 512 * 1024:
+                self.stop_debug()
+                self.window.show_error("Journal du clic limité à 512 Kio ; désactivez puis réactivez le debug.")
+                return
+            self.file.write(json.dumps({"heure": time.time(), "étape": stage, **fields},
+                                       ensure_ascii=False) + "\n")
+        except OSError as exc:
+            self.stop_debug()
+            self.window.show_error(f"Journal du clic impossible : {exc}")
+
+    def start_debug(self, directory=None):
+        self.stop_debug()
+        directory = Path(directory) if directory is not None else data_directory() / "debug"
+        directory.mkdir(parents=True, exist_ok=True)
+        fd, path = tempfile.mkstemp(prefix="premier-clic-", suffix=".jsonl", dir=directory)
+        self.debug_path = Path(path)
+        self.file = os.fdopen(fd, "w", encoding="utf-8", buffering=1)
+        self.record("début")
+
+    def stop_debug(self):
+        if self.file is not None:
+            self.file.close()
+            self.file = None
+
+    def manual_click(self):
+        if self.file is None:
+            return
+        self.record("raccourci : reçu")
+        self.timer.stop()
+        self.click(manual=True)
+
     def clear(self):
         self.timer.stop()
+        self.record("annulation", raison="ressources effacées")
         self.snapshot = None
 
     def update(self, snapshot):
         previous = self.snapshot
         self.snapshot = snapshot
+        self.record("carte", carte=snapshot.map_id, ressources=[
+            {"élément": r.element_id, "case": r.cell, "état": r.state, "récoltable": r.harvestable}
+            for r in snapshot.resources])
         if previous is None or previous.map_id != snapshot.map_id:
             self.timer.stop()
             # First synchronization is not an arrival: it can occur mid-action.
             if previous is not None and self.window.first_resource.isChecked():
                 self.timer.start()
+                self.record("arrivée programmée", délai_ms=self.timer.interval())
 
-    def click(self):
+    def click(self, manual=False):
         w = self.window
         snapshot = self.snapshot
-        if (snapshot is None or not w.first_resource.isChecked() or not w.accepting
-                or w.paused or w.overlay.calibrating or w.overlay.pid is None
-                or w.overlay.foreground() != w.overlay.pid):
+        foreground = w.overlay.foreground()
+        self.record("tentative", manuel=manual, pid=w.overlay.pid, premier_plan=foreground)
+        reason = next((message for blocked, message in [
+            (snapshot is None, "aucune carte synchronisée"),
+            (not manual and not w.first_resource.isChecked(), "option automatique désactivée"),
+            (not w.accepting, "écoute arrêtée"), (w.paused, "écoute suspendue"),
+            (w.overlay.calibrating, "réglage des repères en cours"),
+            (w.overlay.pid is None, "aucun PID Dofus"),
+            (foreground != w.overlay.pid, "Dofus sélectionné hors premier plan"),
+        ] if blocked), None)
+        if reason:
+            self.record("bloqué", raison=reason)
+            if manual:
+                w.show_error(f"Clic debug ignoré : {reason}.")
             return
         settings = w.store.settings
         screen = next((s for s in w.screen().virtualSiblings()
@@ -122,8 +188,10 @@ class FirstResourceClick(QObject):
         adjustment = settings.overlay_adjustments.get(settings.overlay_screen)
         if screen is None or adjustment is None:
             w.show_error("Premier clic ignoré : réglez d’abord les repères sur l’écran Dofus plein écran.")
+            self.record("bloqué", raison="écran ou réglage absent", écran=settings.overlay_screen)
             return
         geometry = screen.geometry()
+        self.record("projection", écran=settings.overlay_screen, géométrie=geometry.getRect(), réglage=adjustment)
         transform = fullscreen_transform(geometry, adjustment)
         candidates = []
         for resource in snapshot.resources:
@@ -132,11 +200,18 @@ class FirstResourceClick(QObject):
                 if 0 <= local.x() < geometry.width() and 0 <= local.y() < geometry.height():
                     candidates.append((resource, local + QPointF(geometry.topLeft())))
         if not candidates:
+            self.record("bloqué", raison="aucune ressource récoltable projetée dans l’écran")
+            if manual:
+                w.show_error("Clic debug ignoré : aucune ressource récoltable projetée dans l’écran.")
             return
-        resource, point = random.choice(candidates)
+        resource, point = candidates[0] if manual else random.choice(candidates)
+        self.record("cible", élément=resource.element_id, nom=resource.name,
+                    case=resource.cell, x=point.x(), y=point.y())
         try:
             self.send(w.overlay.pid, point, geometry)
         except RuntimeError as exc:
+            self.record("bloqué", raison=str(exc))
             w.show_error(str(exc))
             return
+        self.record("clic envoyé", récolte_confirmée=False)
         w.status.setText(f"Premier clic envoyé : {resource.name}, case {resource.cell} · récolte non confirmée")

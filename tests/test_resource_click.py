@@ -130,3 +130,32 @@ def test_auxiliary_titlebar_does_not_hide_fullscreen_click_target():
 
     with pytest.raises(RuntimeError, match="inconnue"):
         check_click_window([], 123, point, geometry)
+
+
+def test_manual_debug_first_target_without_automatic_and_logs_blockers(assist, tmp_path):
+    import json
+
+    w, c, clicks, errors = assist
+    w.first_resource.setChecked(False)
+    first = snapshot(1).resources[0]
+    second = Resource(2, 1, "Orge", 281, 0, True)
+    c.update(ResourceSnapshot(1, True, (first, second), 0, "jnj"))
+    c.manual_click()
+    assert clicks == []  # Debug opt-in is required.
+    c.start_debug(tmp_path)
+    c.manual_click()
+    assert "Blé, case 280" in w.status.text()
+    assert len(clicks) == 1
+    w.overlay.foreground = lambda: 456
+    c.manual_click()
+    assert len(clicks) == 1
+    assert "hors premier plan" in errors[-1]
+    path = c.debug_path
+    c.stop_debug()
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    assert any(r["étape"] == "cible" and r["élément"] == 1 for r in records)
+    assert any(r["étape"] == "bloqué" and "hors premier plan" in r["raison"] for r in records)
+    before = path.read_bytes()
+    c.manual_click()
+    assert path.read_bytes() == before
+    assert len(clicks) == 1
