@@ -214,6 +214,7 @@ def test_focus_lost_during_native_window_check_blocks_global_click():
         CFRelease=lambda *args: None,
         CGEventCreateMouseEvent=lambda *args: 3,
         CGEventSetIntegerValueField=lambda *args: None,
+        CGEventSetFlags=lambda *args: None,
         CGEventPost=lambda *args: posted.append(args),
     )
     with pytest.raises(RuntimeError, match="hors premier plan"):

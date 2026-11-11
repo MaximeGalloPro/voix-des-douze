@@ -55,6 +55,8 @@ class MacClick:
             self.lib.CGEventPost.restype = None
             self.lib.CGEventSetIntegerValueField.argtypes = [C.c_void_p, C.c_uint32, C.c_int64]
             self.lib.CGEventSetIntegerValueField.restype = None
+            self.lib.CGEventSetFlags.argtypes = [C.c_void_p, C.c_uint64]
+            self.lib.CGEventSetFlags.restype = None
             self.lib.CFRelease.argtypes = [C.c_void_p]
             self.lib.CGWindowListCopyWindowInfo.argtypes = [C.c_uint32, C.c_uint32]
             self.lib.CGWindowListCopyWindowInfo.restype = C.c_void_p
@@ -94,6 +96,8 @@ class MacClick:
                 if not event:
                     raise RuntimeError("Création du clic macOS impossible.")
                 events.append(event)
+                # The ':' shortcut may still hold Shift; request a plain left click.
+                self.lib.CGEventSetFlags(event, 0)
                 if kind != 5:
                     self.lib.CGEventSetIntegerValueField(event, 1, 1)  # kCGMouseEventClickState
             # Recheck focus immediately before posting to the global HID stream.
@@ -101,9 +105,15 @@ class MacClick:
             self.trace("focus avant envoi global", pid=pid, premier_plan=foreground)
             if foreground != pid:
                 raise RuntimeError("Premier clic ignoré : Dofus sélectionné hors premier plan.")
-            for event in events:
-                self.lib.CGEventPost(0, event)  # kCGHIDEventTap
-            self.trace("macOS", résultat="mouvement, bouton gauche pressé puis relâché, événements globaux HID")
+            self.lib.CGEventPost(0, events[0])  # kCGHIDEventTap
+            self.lib.CGEventPost(0, events[1])
+            try:
+                # Give frame-polled clients time to observe the pressed button.
+                # Do not pump Qt events here: another shortcut must not reenter.
+                time.sleep(0.08)
+            finally:
+                self.lib.CGEventPost(0, events[2])
+            self.trace("macOS", résultat="mouvement, clic gauche sans modificateur maintenu 80 ms, événements globaux HID")
         finally:
             for event in events:
                 self.lib.CFRelease(event)
