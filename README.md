@@ -41,7 +41,7 @@ L’option **Repères sur Dofus** affiche une fenêtre transparente au-dessus du
 
 **Réglage clavier plein écran, mémorisé entre les lancements :**
 1. Mettre Dofus en plein écran ; démarrer l’écoute et changer de carte pour recevoir les ressources.
-2. Cliquer sur **Régler les repères…**, choisir l’écran du jeu puis **Régler avec le clavier**. Aucun numéro de case ni série de clics n’est demandé. La fenêtre principale se masque temporairement ; une grille de points et les ressources récoltables permettent de voir le déplacement.
+2. Cliquer sur **Régler les repères…**, choisir l’écran du jeu puis **Régler avec le clavier**. Aucun numéro de case ni série de clics n’est demandé. La fenêtre principale se masque temporairement ; une grille de points et toutes les ressources connues de la carte ayant une position valide permettent de voir le déplacement, qu’elles soient prêtes, épuisées, en cours de récolte ou sans action disponible. Ce comportement concerne uniquement le réglage : les repères normaux restent limités aux ressources prêtes à récolter.
 3. Utiliser les **flèches** pour déplacer toute la grille de 1 pixel logique, ou **Maj + flèches** pour 10 pixels. **+** agrandit et **−** réduit l’échelle de 1 point de pourcentage autour du centre de l’écran (20 à 300 %). La touche **=** agrandit aussi.
 4. **Entrée** valide et enregistre le décalage, l’échelle et l’écran sélectionné dans les préférences locales. **Échap** ou fermer le réglage annule sans remplacer le réglage précédent. Pendant le réglage, les touches et clics restent dans sa fenêtre et ne sont pas transmis au jeu. Revenir ensuite sur Dofus : les repères normaux laissent à nouveau passer les clics.
 

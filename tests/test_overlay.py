@@ -110,3 +110,20 @@ def test_keyboard_scaling_is_bounded(app):
         assert adjustment.adjustment[2] == 0.2
     finally:
         adjustment.close()
+
+
+def test_adjustment_includes_unavailable_resources_but_excludes_unknown_cells(app):
+    resources = (
+        Resource(1, 33, "Mature", 100, 0, True),
+        Resource(2, 33, "Épuisée", 200, 1, False),
+        Resource(3, 33, "En récolte", 300, 2, False),
+        Resource(4, 33, "Action indisponible", 400, 0, False),
+        Resource(5, 33, "État inconnu", 500, 9, False),
+        Resource(6, 33, "Sans position", -1, 0, True),
+        Resource(7, 33, "Hors carte", 560, 0, True),
+    )
+    adjustment = AdjustmentOverlay(app.primaryScreen(), resources, (0, 0, 1))
+    try:
+        assert adjustment.resources == resources[:5]
+    finally:
+        adjustment.close()

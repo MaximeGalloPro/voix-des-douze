@@ -168,7 +168,7 @@ class AdjustmentOverlay(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setGeometry(screen.geometry())
         self.adjustment = list(adjustment)
-        self.resources = tuple(r for r in resources if r.harvestable and 0 <= r.cell < 560)
+        self.resources = tuple(r for r in resources if 0 <= r.cell < 560)
         self.completed = False
         self.setFocusPolicy(Qt.StrongFocus)
 
