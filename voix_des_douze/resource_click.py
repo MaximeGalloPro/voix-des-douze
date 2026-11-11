@@ -13,7 +13,7 @@ import time
 
 from PySide6.QtCore import QObject, QPointF, QTimer
 
-from .overlay import cell_point, fullscreen_transform, screen_key
+from .overlay import ForegroundProcess, cell_point, fullscreen_transform, screen_key
 from .settings import data_directory
 
 
@@ -44,13 +44,17 @@ def check_click_window(rows, pid, point, geometry):
 class MacClick:
     def __init__(self, trace=lambda *args, **fields: None):
         self.trace = trace
+        self.foreground = ForegroundProcess()
         self.lib = None
         if sys.platform == "darwin":
             self.lib = C.CDLL("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
             self.lib.AXIsProcessTrusted.restype = C.c_bool
             self.lib.CGEventCreateMouseEvent.argtypes = [C.c_void_p, C.c_uint32, Point, C.c_uint32]
             self.lib.CGEventCreateMouseEvent.restype = C.c_void_p
-            self.lib.CGEventPostToPid.argtypes = [C.c_int32, C.c_void_p]
+            self.lib.CGEventPost.argtypes = [C.c_uint32, C.c_void_p]
+            self.lib.CGEventPost.restype = None
+            self.lib.CGEventSetIntegerValueField.argtypes = [C.c_void_p, C.c_uint32, C.c_int64]
+            self.lib.CGEventSetIntegerValueField.restype = None
             self.lib.CFRelease.argtypes = [C.c_void_p]
             self.lib.CGWindowListCopyWindowInfo.argtypes = [C.c_uint32, C.c_uint32]
             self.lib.CGWindowListCopyWindowInfo.restype = C.c_void_p
@@ -83,19 +87,26 @@ class MacClick:
                 self.lib.CFRelease(data)
             if windows:
                 self.lib.CFRelease(windows)
-        down = self.lib.CGEventCreateMouseEvent(None, 1, Point(point.x(), point.y()), 0)
-        up = self.lib.CGEventCreateMouseEvent(None, 2, Point(point.x(), point.y()), 0)
+        events = []
         try:
-            if not down or not up:
-                raise RuntimeError("Création du clic macOS impossible.")
-            # Target the selected process, never the global event stream.
-            self.lib.CGEventPostToPid(pid, down)
-            self.lib.CGEventPostToPid(pid, up)
-            self.trace("macOS", résultat="bouton gauche pressé puis relâché, événements postés au PID")
+            for kind in (5, 1, 2):  # Mouse moved, left down, left up.
+                event = self.lib.CGEventCreateMouseEvent(None, kind, Point(point.x(), point.y()), 0)
+                if not event:
+                    raise RuntimeError("Création du clic macOS impossible.")
+                events.append(event)
+                if kind != 5:
+                    self.lib.CGEventSetIntegerValueField(event, 1, 1)  # kCGMouseEventClickState
+            # Recheck focus immediately before posting to the global HID stream.
+            foreground = self.foreground()
+            self.trace("focus avant envoi global", pid=pid, premier_plan=foreground)
+            if foreground != pid:
+                raise RuntimeError("Premier clic ignoré : Dofus sélectionné hors premier plan.")
+            for event in events:
+                self.lib.CGEventPost(0, event)  # kCGHIDEventTap
+            self.trace("macOS", résultat="mouvement, bouton gauche pressé puis relâché, événements globaux HID")
         finally:
-            for event in (down, up):
-                if event:
-                    self.lib.CFRelease(event)
+            for event in events:
+                self.lib.CFRelease(event)
 
 
 class FirstResourceClick(QObject):

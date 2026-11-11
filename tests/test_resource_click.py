@@ -187,3 +187,35 @@ def test_debug_cross_matches_sent_point_and_clears_on_map_change_or_disable(assi
     c.stop_debug()
     assert w.overlay.click_target is None
     assert not w.overlay.isVisible()
+
+
+def test_focus_lost_during_native_window_check_blocks_global_click():
+    import ctypes
+    import plistlib
+    from PySide6.QtCore import QPointF, QRect
+    from voix_des_douze.resource_click import MacClick
+
+    # The controller accepted focus, but it changes before global injection.
+    payload = plistlib.dumps([{
+        "kCGWindowLayer": 0, "kCGWindowOwnerPID": 123,
+        "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 800, "Height": 600},
+    }])
+    buffer = ctypes.create_string_buffer(payload)
+    posted = []
+    click = MacClick.__new__(MacClick)
+    click.trace = lambda *args, **fields: None
+    click.foreground = lambda: 456
+    click.lib = SimpleNamespace(
+        AXIsProcessTrusted=lambda: True,
+        CGWindowListCopyWindowInfo=lambda *args: 1,
+        CFPropertyListCreateData=lambda *args: 2,
+        CFDataGetBytePtr=lambda *args: ctypes.addressof(buffer),
+        CFDataGetLength=lambda *args: len(payload),
+        CFRelease=lambda *args: None,
+        CGEventCreateMouseEvent=lambda *args: 3,
+        CGEventSetIntegerValueField=lambda *args: None,
+        CGEventPost=lambda *args: posted.append(args),
+    )
+    with pytest.raises(RuntimeError, match="hors premier plan"):
+        click(123, QPointF(400, 300), QRect(0, 0, 800, 600))
+    assert posted == []
