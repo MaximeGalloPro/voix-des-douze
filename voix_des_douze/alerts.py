@@ -16,12 +16,16 @@ class ResourceAlert(QObject):
         path = Path(self.directory.name) / "resource.wav"
         sample_rate = 22050
         samples = bytearray()
-        for frequency in (660, 880):
-            count = int(sample_rate * 0.10)
-            for index in range(count):
-                envelope = min(1, index / 220, (count - 1 - index) / 220)
-                value = int(10000 * envelope * math.sin(2 * math.pi * frequency * index / sample_rate))
-                samples.extend(struct.pack("<h", value))
+        duration = 0.14
+        count = int(sample_rate * duration)
+        for index in range(count):
+            time = index / sample_rate
+            # A low descending pulse, softly faded at both ends: no sharp click.
+            envelope = (1 - math.exp(-time / 0.003)) * math.exp(-time / 0.028)
+            envelope *= min(1, (count - 1 - index) / (sample_rate * 0.01))
+            phase = 2 * math.pi * (180 * time - 80 * time * time / (2 * duration))
+            value = int(10000 * envelope * math.sin(phase))
+            samples.extend(struct.pack("<h", value))
         with wave.open(str(path), "wb") as stream:
             stream.setnchannels(1)
             stream.setsampwidth(2)
