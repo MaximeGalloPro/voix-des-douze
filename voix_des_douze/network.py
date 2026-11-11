@@ -17,6 +17,7 @@ import time
 
 from .network_protocol import Catalog, Conversation, PacketReader, ProtocolError, VERSION
 from .native.network_capture import game_connections
+from .harvest import HarvestTracker
 
 
 @dataclass(frozen=True)
@@ -134,6 +135,12 @@ class NetworkSession:
                 return
             self.emit(kind, (self.revision, value))
 
+    def _resources(self, snapshot):
+        # Resource snapshots are independent of dialogue revision/cancellation.
+        with self.state_lock:
+            if not self.stop_event.is_set():
+                self.emit("resources", snapshot)
+
     def _run(self):
         auth = None
         fd = None
@@ -148,7 +155,13 @@ class NetworkSession:
             selected = connection(self.client.pid)
             interface = interface_for(selected.remote_ip)
             state = Conversation(catalog, self._conversation)
-            reader = PacketReader(state.handle, local_ip=selected.local_ip, local_port=selected.local_port,
+            harvest = HarvestTracker(self._resources)
+
+            def handle(direction, key, raw):
+                state.handle(direction, key, raw)
+                harvest.handle(direction, key, raw)
+
+            reader = PacketReader(handle, local_ip=selected.local_ip, local_port=selected.local_port,
                                   remote_ip=selected.remote_ip)
             with tempfile.TemporaryDirectory(prefix="voix-network-") as directory:
                 with self.state_lock:

@@ -10,13 +10,14 @@ import threading
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QPushButton, QSlider, QTextEdit, QVBoxLayout, QWidget)
+    QPushButton, QScrollArea, QSlider, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget)
 
 from .hotkeys import GlobalHotkeys, KEYS
 from .network import NetworkSession, clients
 from .playback import Playback, Utterance
 from .settings import Store, model_directory
 from .engines import ENGINES, ManagedSpeechEngine, available_voices
+from .alerts import ResourceAlert
 
 
 class Events(QObject):
@@ -35,7 +36,7 @@ class MainWindow(QMainWindow):
     def __init__(self, store: Store | None = None, models: Path | None = None):
         super().__init__()
         self.setWindowTitle("Voix des Douze · lecteur local")
-        self.resize(960, 720)
+        self.resize(960, 900)
         self.store = store or Store()
         self.events = Events()
         self.models = models or model_directory()
@@ -53,6 +54,7 @@ class MainWindow(QMainWindow):
         self.accepting = False
         self.paused = False
         self.last_dialogue = None
+        self.resource_alert = ResourceAlert(self, self.show_error)
         self.shutting_down = False
         self.build_ui()
         self.events.ready.connect(self.engine_ready)
@@ -76,7 +78,11 @@ class MainWindow(QMainWindow):
 
     def build_ui(self):
         root = QWidget()
-        self.setCentralWidget(root)
+        root.setObjectName("main_content")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(root)
+        self.setCentralWidget(scroll)
         layout = QVBoxLayout(root)
         title = QLabel("VOIX DES DOUZE")
         title.setStyleSheet("font-size:26px;font-weight:700;color:#edce88;padding:8px 0")
@@ -105,6 +111,25 @@ class MainWindow(QMainWindow):
         self.network_status.setWordWrap(True)
         rows.addWidget(self.network_status)
         layout.addWidget(source)
+        resource_box = QGroupBox("Ressources de la carte · debug réseau")
+        resource_layout = QVBoxLayout(resource_box)
+        self.resource_summary = QLabel("En attente de la première carte · aucun comptage disponible")
+        self.resource_summary.setWordWrap(True)
+        self.resource_summary.setAccessibleName("Résumé des ressources détectées")
+        resource_layout.addWidget(self.resource_summary)
+        self.resource_table = QTableWidget(0, 5)
+        self.resource_table.setHorizontalHeaderLabels(["Ressource", "État", "Case", "Identifiant", "Type"])
+        self.resource_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.resource_table.setAccessibleName("Ressources détectées sur la carte courante")
+        self.resource_table.setMaximumHeight(170)
+        self.resource_table.horizontalHeader().setStretchLastSection(True)
+        resource_layout.addWidget(self.resource_table)
+        resource_controls = QHBoxLayout()
+        resource_controls.addWidget(QLabel("Maturité uniquement · niveau de métier non vérifié · aucune lecture d’écran"))
+        resource_controls.addStretch()
+        self.button(resource_controls, "Tester le son", self.test_resource_sound)
+        resource_layout.addLayout(resource_controls)
+        layout.addWidget(resource_box)
         self.npc = QLabel("PNJ : —")
         self.npc.setStyleSheet("font-size:20px;font-weight:600;color:#edce88;padding-top:8px")
         layout.addWidget(self.npc)
@@ -114,6 +139,7 @@ class MainWindow(QMainWindow):
         self.text.setPlaceholderText("Le texte du PNJ apparaîtra ici à l’ouverture du dialogue.")
         body.addWidget(self.text, 1)
         voice_box = QGroupBox("Voix")
+        voice_box.setMinimumHeight(340)
         form = QFormLayout(voice_box)
         self.engine_combo = QComboBox()
         for key, label in ENGINES.items():
@@ -160,10 +186,12 @@ class MainWindow(QMainWindow):
         self.status.setWordWrap(True)
         self.status.setStyleSheet("padding:12px;background:#233039;border-radius:6px")
         layout.addWidget(self.status)
-        self.setStyleSheet("QMainWindow,QDialog {background:#172027;color:#e6e9e8} QWidget {font-size:13px} "
+        self.setStyleSheet("QMainWindow,QDialog,QWidget#main_content {background:#172027;color:#e6e9e8} QWidget {font-size:13px} "
             "QLabel,QCheckBox,QGroupBox {color:#e6e9e8} QGroupBox {border:1px solid #40515b;border-radius:7px;margin-top:12px;padding-top:14px} "
             "QPushButton {padding:8px 12px;border:1px solid #56636b;border-radius:5px;background:#2d4049;color:#f4f1e7} "
-            "QPushButton:hover {background:#3b5763} QTextEdit,QComboBox,QDoubleSpinBox {background:#202e36;color:#f4f1e7;padding:5px;border:1px solid #40515b}")
+            "QPushButton:hover {background:#3b5763} QTextEdit,QComboBox,QDoubleSpinBox {background:#202e36;color:#f4f1e7;padding:5px;border:1px solid #40515b} "
+            "QTableWidget {background:#202e36;color:#f4f1e7;gridline-color:#40515b;selection-background-color:#3b5763} "
+            "QHeaderView::section {background:#2d4049;color:#f4f1e7;padding:4px;border:1px solid #40515b}")
 
     def button(self, layout, label, callback):
         button = QPushButton(label)
@@ -366,6 +394,7 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(False)
         self.client_combo.setEnabled(False)
         self.network_status.setText(f"Vérification de {client.label} et demande d’autorisation…")
+        self.clear_resources()
         self.listener = NetworkSession(client,
             lambda kind, value: self.events.network.emit(generation, kind, value) if not self.shutting_down else None,
             lambda: self.playback.cancel() if generation == self.generation else None)
@@ -375,6 +404,8 @@ class MainWindow(QMainWindow):
         self.paused = False
         self.pause_button.setText("Suspendre")
         self.playback.cancel()
+        self.resource_alert.stop()
+        self.clear_resources("Écoute arrêtée · données de ressources effacées")
         self.clear_dialogue()
         if self.listener:
             self.listener.stop()
@@ -401,6 +432,8 @@ class MainWindow(QMainWindow):
             self.client_combo.setEnabled(True)
             self.network_status.setText("Écoute arrêtée · aucun paquet capturé" if not value else f"Écoute arrêtée · {value}")
             self.clear_dialogue()
+            self.resource_alert.stop()
+            self.clear_resources("Écoute arrêtée · données de ressources effacées")
             if not self.paused:
                 self.status.setText(value or "Écoute terminée. Aucun service ne reste installé ou actif.")
             return
@@ -411,9 +444,36 @@ class MainWindow(QMainWindow):
         elif kind == "ready":
             self.network_status.setText(f"● Écoute active · {value}")
             self.status.setText("Changez de carte puis revenez pour synchroniser les PNJ, puis ouvrez un dialogue.")
+        elif kind == "resources":
+            self.show_resources(value)
         else:
             revision, payload = value
             self.listener.deliver(revision, lambda: self.show_network_dialogue(kind, payload))
+
+    def clear_resources(self, message="En attente de la première carte · aucun comptage disponible"):
+        self.resource_summary.setText(message)
+        self.resource_table.setRowCount(0)
+
+    def test_resource_sound(self):
+        self.resource_alert.play(self.volume.value() / 100)
+
+    def show_resources(self, snapshot):
+        mature = snapshot.mature_count
+        immature = sum(resource.state == 1 for resource in snapshot.resources)
+        harvesting = sum(resource.state == 2 for resource in snapshot.resources)
+        unknown = len(snapshot.resources) - mature - immature - harvesting
+        self.resource_summary.setText(
+            f"Carte {snapshot.map_id} · {len(snapshot.resources)} ressources : "
+            f"matures : {mature} · non matures : {immature} · en récolte : {harvesting} · inconnues : {unknown}"
+            f" · {snapshot.other_elements} autres éléments · message {snapshot.source}")
+        self.resource_table.setRowCount(len(snapshot.resources))
+        for row, resource in enumerate(snapshot.resources):
+            for column, value in enumerate((resource.name, resource.status, resource.cell,
+                                            resource.element_id, resource.type_id)):
+                self.resource_table.setItem(row, column, QTableWidgetItem(str(value)))
+        self.resource_table.resizeColumnsToContents()
+        if snapshot.changed_map and mature:
+            self.test_resource_sound()
 
     def show_network_dialogue(self, kind, value):
         if kind == "dialogue":
@@ -525,4 +585,5 @@ class MainWindow(QMainWindow):
         self.stop()
         self.hotkeys.close()
         self.playback.close()
+        self.resource_alert.close()
         event.accept()

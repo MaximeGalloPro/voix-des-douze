@@ -1,6 +1,6 @@
 # Voix des Douze
 
-Application **macOS locale** : événements du client Dofus choisi → nom et texte du PNJ → voix françaises **Piper, Sopro V2 Turbo ou Pocket TTS**, mémorisées par personnage et par moteur. Aucun OCR, capture d’écran, réécriture par LLM ou API payante. Aucun proxy, modification du client ou envoi d’action au jeu.
+Application **macOS locale** : événements du client Dofus choisi → nom et texte du PNJ → voix françaises **Piper, Sopro V2 Turbo ou Pocket TTS**, mémorisées par personnage et par moteur. Une alerte sonore signale aussi une carte contenant des ressources matures, avec un panneau de debug des ressources. Aucun OCR, capture d’écran, réécriture par LLM ou API payante. Aucun proxy, modification du client ou envoi d’action au jeu.
 
 Projet indépendant d’Ankama et de Romandub, sans affiliation ou approbation supposée. La lecture passive du réseau ne vaut pas autorisation d’Ankama ; sa compatibilité contractuelle doit être clarifiée avant diffusion communautaire.
 
@@ -22,6 +22,19 @@ Prérequis : macOS 14+, **Python 3.13**, et Python système des Command Line Too
 ```
 
 Après préparation, l’application ne télécharge rien pour démarrer l’écoute ou produire la voix. Le jeu lui-même nécessite sa connexion habituelle. Aucun historique de paquets ou de dialogues n’est enregistré par l’application et rien n’est envoyé à un serveur communautaire.
+
+### Ressources : alerte à l’arrivée et debug
+
+Après **Démarrer l’écoute**, changer de carte pour recevoir son état complet. À la première synchronisation puis à chaque changement d’identifiant de carte, un court son de deux notes est joué si au moins une ressource mature est détectée. Revenir sur une carte peut donc sonner à nouveau ; une répétition du même état de carte, une récolte ou une repousse sur place ne rejoue pas l’alerte. Le son est indépendant du moteur vocal et de **Lecture automatique** ; il respecte le curseur **Volume**. **Tester le son** permet de vérifier la sortie audio sans capture.
+
+L’encart **Ressources de la carte · debug réseau** affiche l’identifiant de carte, les nombres de ressources matures/non matures/en récolte/inconnues, puis pour chaque ressource : nom, état, case Dofus, identifiant d’élément et type. Il est mis à jour par les événements de carte et d’éléments, puis vidé à l’arrêt/suspension ou à la fin de session. Il décrit les données réseau de la carte courante, pas une reconnaissance de ce qui est visible à l’écran ni des coordonnées de souris.
+
+**Maturité seulement : le niveau de métier et les autres conditions personnelles ne sont pas vérifiés.** Une ressource mature peut donc provoquer un son même si le personnage ne peut pas la récolter. Les deux listes de compétences sont examinées pour reconnaître une action produisant une ressource, sans confondre une porte ou un atelier avec une récolte. Les éléments voisins ne sont pas comptés. Un état inconnu reste inconnu et ne déclenche pas l’alerte.
+
+Ce décodage est expérimental et spécifique à **3.7.13.17** : dans les champs observés, l’état 0 (omis en Protobuf) correspond à mature, 1 à non mature et 2 à récolte en cours, corroborés sur les châtaigniers et frênes. Les noms et compétences proviennent des données extraites de cette même version ; leur présence dans le catalogue ne constitue pas une validation en jeu de toutes les ressources.
+
+Les métadonnées compactes sont livrées dans `models/harvest.json` : aucun téléchargement supplémentaire au démarrage de l’écoute. Pour les régénérer explicitement, `python scripts/build_harvest_catalog.py` vérifie les SHA256 figés de `interactivesdata.json`, `skillsdata.json` et `i18n_fr.json` ; il réutilise les fichiers de cache conformes ou télécharge ceux qui manquent. Tests ciblés : `python -m pytest tests/test_harvest.py tests/test_network.py tests/test_capture_lifecycle.py -q`.
+
 
 ### Choisir Piper, Sopro ou Pocket
 
