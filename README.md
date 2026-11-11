@@ -35,6 +35,20 @@ Ce décodage est expérimental et spécifique à **3.7.13.17** : dans les champs
 
 Les métadonnées compactes sont livrées dans `models/harvest.json` : aucun téléchargement supplémentaire au démarrage de l’écoute. Pour les régénérer explicitement, `python scripts/build_harvest_catalog.py` vérifie les SHA256 figés de `interactivesdata.json`, `skillsdata.json` et `i18n_fr.json` ; il réutilise les fichiers de cache conformes ou télécharge ceux qui manquent. Tests ciblés : `python -m pytest tests/test_harvest.py tests/test_network.py tests/test_capture_lifecycle.py -q`.
 
+### Repères visuels sur le jeu — POC local macOS
+
+L’option **Repères sur Dofus** affiche une fenêtre transparente au-dessus du jeu : un anneau jaune à contour noir et un nom en blanc pour chaque ressource mature dont l’action de récolte est disponible. Les mises à jour retirent immédiatement les repères devenus indisponibles. L’overlay laisse passer les clics, ne prend pas le focus et ne s’affiche que lorsque le processus Dofus suivi est au premier plan. Arrêter ou suspendre l’écoute efface les repères ; décocher l’option les masque sans arrêter l’écoute. Aucun clic, déplacement ou code n’est envoyé au jeu.
+
+**Calage manuel, une fois par lancement et disposition de fenêtre :**
+1. Garder Dofus en **mode fenêtré**, visible sur son écran ; démarrer l’écoute et changer de carte.
+2. Cliquer sur **Caler les repères…**, choisir l’écran du jeu et trois numéros de cases connues, non alignées et de préférence éloignées. Le tableau fournit les cases des ressources ; il faut pouvoir identifier leurs centres au sol dans le jeu. Ce calage nécessite une aide visuelle si le joueur ne peut pas identifier les cases.
+3. Cliquer successivement sur les trois centres demandés, **au sol, pas sur le feuillage**. La fenêtre du logiciel est temporairement masquée ; ces trois clics sont interceptés par le calage et ne sont pas transmis au jeu. **Échap** annule et restaure la fenêtre. Après validation, revenir au jeu pour voir les repères.
+
+La projection utilise la grille décalée de 14 colonnes / 560 cases, puis un calage affine sur trois centres. Elle marque les cases au sol, pas les contours des décors ; elle ne compense pas le relief. Le placement exact sur Dofus Unity reste à valider en jeu. **Déplacer, redimensionner, changer de moniteur ou zoomer la fenêtre Dofus impose de refaire le calage** : aucun suivi automatique de sa géométrie. Le plein écran natif macOS n’est pas pris en charge par ce POC. Le calage n’est pas enregistré sur disque et changer de client Dofus l’invalide. Aucune permission de capture d’écran ou d’Accessibilité n’est ajoutée.
+
+Vérification : `python -m pytest tests/test_overlay.py tests/test_harvest.py -q`. Le parcours natif Cocoa vérifie aussi le rendu transparent, la propriété native `NSWindow.ignoresMouseEvents`, le calage et son annulation ; cela ne remplace pas la vérification de l’alignement sur une carte réelle.
+
+
 
 ### Choisir Piper, Sopro ou Pocket
 

@@ -7,10 +7,10 @@ import subprocess
 import sys
 import threading
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QPointF, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QPushButton, QScrollArea, QSlider, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget)
+    QPushButton, QScrollArea, QSlider, QSpinBox, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget)
 
 from .hotkeys import GlobalHotkeys, KEYS
 from .network import NetworkSession, clients
@@ -18,6 +18,7 @@ from .playback import Playback, Utterance
 from .settings import Store, model_directory
 from .engines import ENGINES, ManagedSpeechEngine, available_voices
 from .alerts import ResourceAlert
+from .overlay import CalibrationOverlay, ResourceOverlay, calibration_transform
 
 
 class Events(QObject):
@@ -55,6 +56,8 @@ class MainWindow(QMainWindow):
         self.paused = False
         self.last_dialogue = None
         self.resource_alert = ResourceAlert(self, self.show_error)
+        self.overlay = ResourceOverlay()
+        self.calibration = None
         self.shutting_down = False
         self.build_ui()
         self.events.ready.connect(self.engine_ready)
@@ -129,6 +132,15 @@ class MainWindow(QMainWindow):
         resource_controls.addStretch()
         self.button(resource_controls, "Tester le son", self.test_resource_sound)
         resource_layout.addLayout(resource_controls)
+        overlay_controls = QHBoxLayout()
+        self.overlay_enabled = QCheckBox("Repères sur Dofus")
+        self.overlay_enabled.toggled.connect(self.toggle_overlay)
+        overlay_controls.addWidget(self.overlay_enabled)
+        self.button(overlay_controls, "Caler les repères…", self.configure_overlay)
+        self.overlay_status = QLabel("Calage manuel requis · Dofus en mode fenêtré")
+        self.overlay_status.setWordWrap(True)
+        overlay_controls.addWidget(self.overlay_status, 1)
+        resource_layout.addLayout(overlay_controls)
         layout.addWidget(resource_box)
         self.npc = QLabel("PNJ : —")
         self.npc.setStyleSheet("font-size:20px;font-weight:600;color:#edce88;padding-top:8px")
@@ -395,6 +407,11 @@ class MainWindow(QMainWindow):
         self.client_combo.setEnabled(False)
         self.network_status.setText(f"Vérification de {client.label} et demande d’autorisation…")
         self.clear_resources()
+        if self.overlay.pid is not None and self.overlay.pid != client.pid:
+            self.overlay.transform = None
+            self.overlay_enabled.setChecked(False)
+            self.overlay_status.setText("Autre client Dofus · nouveau calage manuel requis")
+        self.overlay.pid = client.pid
         self.listener = NetworkSession(client,
             lambda kind, value: self.events.network.emit(generation, kind, value) if not self.shutting_down else None,
             lambda: self.playback.cancel() if generation == self.generation else None)
@@ -453,11 +470,13 @@ class MainWindow(QMainWindow):
     def clear_resources(self, message="En attente de la première carte · aucun comptage disponible"):
         self.resource_summary.setText(message)
         self.resource_table.setRowCount(0)
+        self.overlay.set_resources(())
 
     def test_resource_sound(self):
         self.resource_alert.play(self.volume.value() / 100)
 
     def show_resources(self, snapshot):
+        self.overlay.set_resources(snapshot.resources)
         mature = snapshot.mature_count
         immature = sum(resource.state == 1 for resource in snapshot.resources)
         harvesting = sum(resource.state == 2 for resource in snapshot.resources)
@@ -474,6 +493,85 @@ class MainWindow(QMainWindow):
         self.resource_table.resizeColumnsToContents()
         if snapshot.changed_map and snapshot.harvestable_count:
             self.test_resource_sound()
+
+    def toggle_overlay(self, enabled):
+        self.overlay.enabled = enabled
+        self.overlay.refresh_visibility()
+        if enabled and self.overlay.transform is None:
+            self.configure_overlay()
+
+    def configure_overlay(self):
+        if self.calibration is not None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Caler les repères sur la grille Dofus")
+        layout = QVBoxLayout(dialog)
+        instructions = QLabel(
+            "POC en mode fenêtré : gardez la fenêtre Dofus et son zoom fixes après le calage.\n"
+            "Choisissez trois cases connues non alignées, de préférence éloignées, puis cliquez\n"
+            "sur leurs centres au sol dans le jeu. Les cases des ressources figurent dans le tableau.\n"
+            "Le calage intercepte uniquement ces trois clics ; Échap annule. Aucun clic ne va au jeu.\n"
+            "Les repères indiquent le sol, pas le contour des arbres ni le relief.")
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+        form = QFormLayout()
+        screen_combo = QComboBox()
+        for index, screen in enumerate(self.screen().virtualSiblings()):
+            screen_combo.addItem(f"Écran {index + 1} · {screen.name()}", screen)
+            if screen == self.screen():
+                screen_combo.setCurrentIndex(index)
+        form.addRow("Écran du jeu", screen_combo)
+        available = list(dict.fromkeys(r.cell for r in self.overlay.resources if 0 <= r.cell < 560))
+        defaults = available[:3] if len(available) >= 3 else (0, 13, 546)
+        cells = []
+        for index, default in enumerate(defaults):
+            field = QSpinBox()
+            field.setRange(0, 559)
+            field.setValue(default)
+            form.addRow(f"Case du repère {index + 1}", field)
+            cells.append(field)
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Placer les trois repères")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if not dialog.exec():
+            return
+        selected = tuple(field.value() for field in cells)
+        # Reject collinear reference cells before temporarily hiding the main UI.
+        try:
+            calibration_transform(selected, (QPointF(0, 0), QPointF(100, 0), QPointF(0, 100)))
+        except ValueError as exc:
+            self.show_error(str(exc))
+            return
+        screen = screen_combo.currentData()
+        self.overlay.calibrating = True
+        self.overlay.hide()
+        self.calibration = CalibrationOverlay(selected, screen)
+        self.calibration.finished.connect(
+            lambda points: self.finish_overlay_calibration(selected, points, screen.geometry()))
+        self.hide()
+        self.calibration.show()
+        self.calibration.raise_()
+        self.calibration.activateWindow()
+
+    def finish_overlay_calibration(self, cells, points, geometry):
+        self.calibration = None
+        self.overlay.calibrating = False
+        self.show()
+        if points is None:
+            self.overlay.refresh_visibility()
+            return
+        try:
+            self.overlay.calibrate(cells, points, geometry)
+        except ValueError as exc:
+            self.show_error(str(exc))
+            self.overlay.refresh_visibility()
+            return
+        self.overlay_status.setText("Calé · recalibrer après déplacement, redimensionnement ou zoom de Dofus")
+        self.overlay_enabled.setChecked(True)
+        self.overlay.refresh_visibility()
 
     def show_network_dialogue(self, kind, value):
         if kind == "dialogue":
@@ -575,6 +673,12 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.shutting_down = True
+        if self.calibration is not None:
+            self.calibration.finished.disconnect()
+            self.calibration.close()
+            self.calibration = None
+        self.overlay.timer.stop()
+        self.overlay.close()
         with self.preparation_lock:
             process = self.preparation_process
             if process is not None and process.poll() is None:
