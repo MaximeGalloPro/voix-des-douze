@@ -26,6 +26,7 @@ def model_directory() -> Path:
 @dataclass
 class Settings:
     automatic: bool = True
+    resource_sound: bool = True
     volume: float = 0.8
     speed: float = 1.0
     default_voice: str = ""

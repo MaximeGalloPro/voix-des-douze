@@ -128,9 +128,12 @@ class MainWindow(QMainWindow):
         self.resource_table.horizontalHeader().setStretchLastSection(True)
         resource_layout.addWidget(self.resource_table)
         resource_controls = QHBoxLayout()
+        self.resource_sound = QCheckBox("Son des ressources")
+        self.resource_sound.toggled.connect(self.toggle_resource_sound)
+        resource_controls.addWidget(self.resource_sound)
         resource_controls.addWidget(QLabel("Récoltable = mature et action disponible pour ce personnage · aucune lecture d’écran"))
         resource_controls.addStretch()
-        self.button(resource_controls, "Tester le son", self.test_resource_sound)
+        self.resource_sound_test = self.button(resource_controls, "Tester le son", self.test_resource_sound)
         resource_layout.addLayout(resource_controls)
         overlay_controls = QHBoxLayout()
         self.overlay_enabled = QCheckBox("Repères sur Dofus")
@@ -212,11 +215,13 @@ class MainWindow(QMainWindow):
         return button
 
     def apply_settings(self):
-        controls = [self.automatic, self.volume, self.speed, self.default_combo]
+        controls = [self.automatic, self.resource_sound, self.volume, self.speed, self.default_combo]
         for control in controls:
             control.blockSignals(True)
         settings = self.store.settings
         self.automatic.setChecked(settings.automatic)
+        self.resource_sound.setChecked(settings.resource_sound)
+        self.resource_sound_test.setEnabled(settings.resource_sound)
         self.volume.setValue(round(settings.volume * 100))
         self.speed.setValue(settings.speed)
         index = self.default_combo.findData(self.store.default_for(self.engine_id))
@@ -468,8 +473,19 @@ class MainWindow(QMainWindow):
         self.resource_table.setRowCount(0)
         self.overlay.set_resources(())
 
+    def toggle_resource_sound(self, enabled):
+        self.store.settings.resource_sound = enabled
+        self.resource_sound_test.setEnabled(enabled)
+        if not enabled:
+            self.resource_alert.stop()
+        try:
+            self.store.save()
+        except OSError as exc:
+            self.show_error(f"Enregistrement impossible : {exc}")
+
     def test_resource_sound(self):
-        self.resource_alert.play(self.volume.value() / 100)
+        if self.resource_sound.isChecked():
+            self.resource_alert.play(self.volume.value() / 100)
 
     def show_resources(self, snapshot):
         self.overlay.set_resources(snapshot.resources)
