@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QCheckBox, QLabel
 from PySide6.QtTest import QTest
 
 from voix_des_douze.harvest import Resource, ResourceSnapshot
-from voix_des_douze.overlay import screen_key
+from voix_des_douze.overlay import ResourceOverlay, screen_key
 from voix_des_douze.resource_click import FirstResourceClick
 
 
@@ -18,7 +18,9 @@ def assist():
     w.first_resource = QCheckBox(w)
     w.first_resource.setChecked(True)
     w.accepting, w.paused = True, False
-    w.overlay = SimpleNamespace(pid=123, foreground=lambda: 123, calibrating=False)
+    w.overlay = ResourceOverlay()
+    w.overlay.pid = 123
+    w.overlay.foreground = lambda: 123
     w.status = QLabel(w)
     errors, clicks = [], []
     w.show_error = errors.append
@@ -30,6 +32,9 @@ def assist():
     controller.timer.setInterval(10)
     yield w, controller, clicks, errors
     controller.clear()
+    controller.stop_debug()
+    w.overlay.timer.stop()
+    w.overlay.close()
     w.close()
 
 
@@ -159,3 +164,26 @@ def test_manual_debug_first_target_without_automatic_and_logs_blockers(assist, t
     c.manual_click()
     assert path.read_bytes() == before
     assert len(clicks) == 1
+
+
+def test_debug_cross_matches_sent_point_and_clears_on_map_change_or_disable(assist, tmp_path):
+    from PySide6.QtCore import QPointF
+
+    w, c, clicks, errors = assist
+    c.update(snapshot(1))
+    c.click()
+    assert w.overlay.click_target is None
+    c.start_debug(tmp_path)
+    c.manual_click()
+    point, geometry = clicks[-1][1:]
+    assert w.overlay.click_target + QPointF(geometry.topLeft()) == point
+    assert w.overlay.isVisible()  # Resource markers are disabled.
+    c.update(snapshot(2))
+    assert w.overlay.click_target is None
+    assert not w.overlay.isVisible()
+    c.timer.stop()
+    c.manual_click()
+    assert w.overlay.isVisible()
+    c.stop_debug()
+    assert w.overlay.click_target is None
+    assert not w.overlay.isVisible()

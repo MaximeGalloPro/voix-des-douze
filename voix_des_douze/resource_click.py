@@ -135,6 +135,7 @@ class FirstResourceClick(QObject):
         self.record("début")
 
     def stop_debug(self):
+        self.window.overlay.clear_click_target()
         if self.file is not None:
             self.file.close()
             self.file = None
@@ -148,6 +149,7 @@ class FirstResourceClick(QObject):
 
     def clear(self):
         self.timer.stop()
+        self.window.overlay.clear_click_target()
         self.record("annulation", raison="ressources effacées")
         self.snapshot = None
 
@@ -158,6 +160,7 @@ class FirstResourceClick(QObject):
             {"élément": r.element_id, "case": r.cell, "état": r.state, "récoltable": r.harvestable}
             for r in snapshot.resources])
         if previous is None or previous.map_id != snapshot.map_id:
+            self.window.overlay.clear_click_target()
             self.timer.stop()
             # First synchronization is not an arrival: it can occur mid-action.
             if previous is not None and self.window.first_resource.isChecked():
@@ -207,6 +210,8 @@ class FirstResourceClick(QObject):
         resource, point = candidates[0] if manual else random.choice(candidates)
         self.record("cible", élément=resource.element_id, nom=resource.name,
                     case=resource.cell, x=point.x(), y=point.y())
+        if self.file is not None:
+            w.overlay.show_click_target(point, geometry)
         try:
             self.send(w.overlay.pid, point, geometry)
         except RuntimeError as exc:

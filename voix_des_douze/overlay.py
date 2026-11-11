@@ -106,12 +106,18 @@ class ResourceOverlay(QWidget):
         self.calibrating = False
         self.pid = None
         self.foreground = ForegroundProcess()
+        self.click_target = None
+        self.click_timer = QTimer(self)
+        self.click_timer.setSingleShot(True)
+        self.click_timer.setInterval(3000)
+        self.click_timer.timeout.connect(self.clear_click_target)
         self.timer = QTimer(self)
         self.timer.setInterval(250)
         self.timer.timeout.connect(self.refresh_visibility)
         self.timer.start()
 
     def configure(self, geometry, adjustment):
+        self.clear_click_target()
         self.transform = fullscreen_transform(geometry, adjustment)
         self.setGeometry(geometry)
         self.rebuild()
@@ -127,9 +133,24 @@ class ResourceOverlay(QWidget):
         self.update()
         self.refresh_visibility()
 
+    def show_click_target(self, point, geometry):
+        self.setGeometry(geometry)
+        self.click_target = point - QPointF(geometry.topLeft())
+        self.click_timer.start()
+        self.update()
+        self.refresh_visibility()
+
+    def clear_click_target(self):
+        self.click_timer.stop()
+        self.click_target = None
+        self.update()
+        self.refresh_visibility()
+
     def refresh_visibility(self):
-        visible = bool(self.enabled and not self.calibrating and self.transform and self.markers and self.pid is not None
-                       and self.foreground() == self.pid)
+        visible = bool(not self.calibrating and self.pid is not None
+                       and self.foreground() == self.pid
+                       and (self.click_target is not None or
+                            (self.enabled and self.transform and self.markers)))
         newly_visible = visible and not self.isVisible()
         self.setVisible(visible)
         if newly_visible:
@@ -143,7 +164,7 @@ class ResourceOverlay(QWidget):
         font.setPointSize(16)
         font.setBold(True)
         painter.setFont(font)
-        for marker in self.markers:
+        for marker in self.markers if self.enabled else ():
             point = marker.point
             painter.setBrush(Qt.NoBrush)
             painter.setPen(QPen(QColor("#000000"), 10))
@@ -157,6 +178,13 @@ class ResourceOverlay(QWidget):
             painter.fillRect(int(x), int(y), width, metrics.height() + 8, QColor(0, 0, 0, 230))
             painter.setPen(QColor("#ffffff"))
             painter.drawText(QPointF(x + 8, y + metrics.ascent() + 4), marker.label)
+        if self.click_target is not None:
+            point = self.click_target
+            # Dark outline keeps the exact centre legible on any game artwork.
+            for color, width in (("#000000", 7), ("#ff4f85", 3)):
+                painter.setPen(QPen(QColor(color), width))
+                painter.drawLine(point + QPointF(-14, 0), point + QPointF(14, 0))
+                painter.drawLine(point + QPointF(0, -14), point + QPointF(0, 14))
 
 
 class AdjustmentOverlay(QWidget):

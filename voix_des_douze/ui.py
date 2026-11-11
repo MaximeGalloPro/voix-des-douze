@@ -714,7 +714,7 @@ class MainWindow(QMainWindow):
                 binding = self.hotkeys.set_resource_debug(True)
                 self.resource_click.record("raccourci enregistré", touche=":", liaison=binding)
                 self.resource_click_debug_status.setText(
-                    f"Touche : → première ressource récoltable · journal : {self.resource_click.debug_path}")
+                    f"Touche : → première ressource récoltable · croix rose pendant 3 s · journal : {self.resource_click.debug_path}")
             else:
                 self.hotkeys.set_resource_debug(False)
                 self.resource_click.record("fin")

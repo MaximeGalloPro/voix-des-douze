@@ -1,6 +1,6 @@
 """Ground projection, eligibility and disappearance of accessibility markers."""
 import pytest
-from PySide6.QtCore import QPointF, QRect, Qt
+from PySide6.QtCore import QEventLoop, QPointF, QRect, Qt, QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -165,3 +165,31 @@ def test_debug_write_limit_stops_logging_but_not_adjustment(app, tmp_path):
     assert panel.debug.file is None
     assert panel.debug.error
     panel.close()
+
+
+def test_click_cross_uses_screen_origin_and_expires_without_stealing_input(app):
+    overlay = ResourceOverlay()
+    overlay.pid = 123
+    overlay.foreground = lambda: 123
+    overlay.click_timer.setInterval(20)
+    try:
+        overlay.show_click_target(QPointF(2020.5, 310.25), QRect(1920, 100, 900, 600))
+        assert overlay.click_target == QPointF(100.5, 210.25)
+        assert overlay.isVisible()
+        assert overlay.windowFlags() & Qt.WindowTransparentForInput
+        assert overlay.windowFlags() & Qt.WindowDoesNotAcceptFocus
+        overlay.foreground = lambda: 456
+        overlay.refresh_visibility()
+        assert not overlay.isVisible()
+        loop = QEventLoop()
+        overlay.click_timer.timeout.connect(loop.quit)
+        QTimer.singleShot(1000, loop.quit)
+        loop.exec()
+        overlay.foreground = lambda: 123
+        overlay.refresh_visibility()
+        assert overlay.click_target is None
+        assert not overlay.isVisible()
+    finally:
+        overlay.timer.stop()
+        overlay.click_timer.stop()
+        overlay.close()
