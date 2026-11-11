@@ -44,8 +44,20 @@ def fullscreen_spaces(widget):
     window = message(int(widget.winId()), selector(b"window"))
     get = C.CFUNCTYPE(C.c_ulong, C.c_void_p, C.c_void_p)(("objc_msgSend", objc))
     set_behavior = C.CFUNCTYPE(None, C.c_void_p, C.c_void_p, C.c_ulong)(("objc_msgSend", objc))
-    set_behavior(window, selector(b"setCollectionBehavior:"),
-                 (get(window, selector(b"collectionBehavior")) & ~(2 | 128)) | 1 | 256)
+    if widget.testAttribute(Qt.WA_ShowWithoutActivating):
+        # Fullscreen admission requires a nonactivating NSPanel, not merely
+        # Qt's refusal to accept focus. Keep the keyboard adjustment activating.
+        set_behavior(window, selector(b"setStyleMask:"),
+                     get(window, selector(b"styleMask")) | (1 << 7))
+    # macOS 13+: joining Spaces alone does not admit an overlay to another
+    # application's fullscreen Space. Primary/Auxiliary are mutually exclusive
+    # with CanJoinAllApplications (AppKit NSWindowCollectionBehavior).
+    behavior = get(window, selector(b"collectionBehavior"))
+    behavior &= ~(2 | 128 | 512 | (1 << 16) | (1 << 17))
+    behavior |= 1 | 256 | (1 << 18)
+    set_behavior(window, selector(b"setCollectionBehavior:"), behavior)
+    order_front = C.CFUNCTYPE(None, C.c_void_p, C.c_void_p)(("objc_msgSend", objc))
+    order_front(window, selector(b"orderFrontRegardless"))
 
 
 class ProcessSerialNumber(C.Structure):
@@ -105,10 +117,6 @@ class ResourceOverlay(QWidget):
         self.setGeometry(geometry)
         self.rebuild()
 
-    def showEvent(self, event):
-        fullscreen_spaces(self)
-        super().showEvent(event)
-
     def set_resources(self, resources):
         self.resources = resources
         self.rebuild()
@@ -123,7 +131,11 @@ class ResourceOverlay(QWidget):
     def refresh_visibility(self):
         visible = bool(self.enabled and not self.calibrating and self.transform and self.markers and self.pid is not None
                        and self.foreground() == self.pid)
+        newly_visible = visible and not self.isVisible()
         self.setVisible(visible)
+        if newly_visible:
+            # Qt rewrites native window properties while showing the panel.
+            fullscreen_spaces(self)
 
     def paintEvent(self, event):
         painter = QPainter(self)
