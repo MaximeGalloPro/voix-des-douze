@@ -7,10 +7,10 @@ import subprocess
 import sys
 import threading
 
-from PySide6.QtCore import QObject, QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QPushButton, QScrollArea, QSlider, QSpinBox, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget)
+    QPushButton, QScrollArea, QSlider, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget)
 
 from .hotkeys import GlobalHotkeys, KEYS
 from .network import NetworkSession, clients
@@ -18,7 +18,7 @@ from .playback import Playback, Utterance
 from .settings import Store, model_directory
 from .engines import ENGINES, ManagedSpeechEngine, available_voices
 from .alerts import ResourceAlert
-from .overlay import CalibrationOverlay, ResourceOverlay, calibration_transform
+from .overlay import AdjustmentOverlay, ResourceOverlay, screen_key
 
 
 class Events(QObject):
@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         self.last_dialogue = None
         self.resource_alert = ResourceAlert(self, self.show_error)
         self.overlay = ResourceOverlay()
-        self.calibration = None
+        self.adjustment = None
         self.shutting_down = False
         self.build_ui()
         self.events.ready.connect(self.engine_ready)
@@ -136,8 +136,8 @@ class MainWindow(QMainWindow):
         self.overlay_enabled = QCheckBox("Repères sur Dofus")
         self.overlay_enabled.toggled.connect(self.toggle_overlay)
         overlay_controls.addWidget(self.overlay_enabled)
-        self.button(overlay_controls, "Caler les repères…", self.configure_overlay)
-        self.overlay_status = QLabel("Calage manuel requis · Dofus en mode fenêtré")
+        self.button(overlay_controls, "Régler les repères…", self.configure_overlay)
+        self.overlay_status = QLabel("Plein écran · réglage avec flèches et + / −")
         self.overlay_status.setWordWrap(True)
         overlay_controls.addWidget(self.overlay_status, 1)
         resource_layout.addLayout(overlay_controls)
@@ -407,10 +407,6 @@ class MainWindow(QMainWindow):
         self.client_combo.setEnabled(False)
         self.network_status.setText(f"Vérification de {client.label} et demande d’autorisation…")
         self.clear_resources()
-        if self.overlay.pid is not None and self.overlay.pid != client.pid:
-            self.overlay.transform = None
-            self.overlay_enabled.setChecked(False)
-            self.overlay_status.setText("Autre client Dofus · nouveau calage manuel requis")
         self.overlay.pid = client.pid
         self.listener = NetworkSession(client,
             lambda kind, value: self.events.network.emit(generation, kind, value) if not self.shutting_down else None,
@@ -496,80 +492,76 @@ class MainWindow(QMainWindow):
 
     def toggle_overlay(self, enabled):
         self.overlay.enabled = enabled
-        self.overlay.refresh_visibility()
         if enabled and self.overlay.transform is None:
-            self.configure_overlay()
+            screen = next((screen for screen in self.screen().virtualSiblings()
+                           if screen_key(screen) == self.store.settings.overlay_screen), self.screen())
+            saved = self.store.settings.overlay_adjustments.get(screen_key(screen), [0, 0, 1])
+            self.overlay.configure(screen.geometry(), saved)
+        self.overlay.refresh_visibility()
 
     def configure_overlay(self):
-        if self.calibration is not None:
+        if self.adjustment is not None:
             return
         dialog = QDialog(self)
-        dialog.setWindowTitle("Caler les repères sur la grille Dofus")
+        dialog.setWindowTitle("Régler les repères plein écran")
         layout = QVBoxLayout(dialog)
         instructions = QLabel(
-            "POC en mode fenêtré : gardez la fenêtre Dofus et son zoom fixes après le calage.\n"
-            "Choisissez trois cases connues non alignées, de préférence éloignées, puis cliquez\n"
-            "sur leurs centres au sol dans le jeu. Les cases des ressources figurent dans le tableau.\n"
-            "Le calage intercepte uniquement ces trois clics ; Échap annule. Aucun clic ne va au jeu.\n"
-            "Les repères indiquent le sol, pas le contour des arbres ni le relief.")
+            "Choisissez l’écran Dofus. Flèches : déplacer ; Maj + flèches : plus vite.\n"
+            "+ / − : changer l’échelle autour du centre de l’écran.\n"
+            "Entrée mémorise le réglage ; Échap annule. Aucun clic ni touche n’est envoyé au jeu.")
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
-        form = QFormLayout()
         screen_combo = QComboBox()
         for index, screen in enumerate(self.screen().virtualSiblings()):
             screen_combo.addItem(f"Écran {index + 1} · {screen.name()}", screen)
             if screen == self.screen():
                 screen_combo.setCurrentIndex(index)
-        form.addRow("Écran du jeu", screen_combo)
-        available = list(dict.fromkeys(r.cell for r in self.overlay.resources if 0 <= r.cell < 560))
-        defaults = available[:3] if len(available) >= 3 else (0, 13, 546)
-        cells = []
-        for index, default in enumerate(defaults):
-            field = QSpinBox()
-            field.setRange(0, 559)
-            field.setValue(default)
-            form.addRow(f"Case du repère {index + 1}", field)
-            cells.append(field)
-        layout.addLayout(form)
+        layout.addWidget(screen_combo)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Ok).setText("Placer les trois repères")
+        buttons.button(QDialogButtonBox.Ok).setText("Régler avec le clavier")
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         if not dialog.exec():
             return
-        selected = tuple(field.value() for field in cells)
-        # Reject collinear reference cells before temporarily hiding the main UI.
-        try:
-            calibration_transform(selected, (QPointF(0, 0), QPointF(100, 0), QPointF(0, 100)))
-        except ValueError as exc:
-            self.show_error(str(exc))
-            return
         screen = screen_combo.currentData()
+        saved = self.store.settings.overlay_adjustments.get(screen_key(screen), [0, 0, 1])
         self.overlay.calibrating = True
         self.overlay.hide()
-        self.calibration = CalibrationOverlay(selected, screen)
-        self.calibration.finished.connect(
-            lambda points: self.finish_overlay_calibration(selected, points, screen.geometry()))
+        self.adjustment = AdjustmentOverlay(screen, self.overlay.resources, saved)
+        self.adjustment.finished.connect(
+            lambda result: self.finish_overlay_adjustment(screen, result))
         self.hide()
-        self.calibration.show()
-        self.calibration.raise_()
-        self.calibration.activateWindow()
+        self.adjustment.show()
+        self.adjustment.raise_()
+        self.adjustment.activateWindow()
+        self.adjustment.setFocus()
 
-    def finish_overlay_calibration(self, cells, points, geometry):
-        self.calibration = None
+    def finish_overlay_adjustment(self, screen, result):
+        self.adjustment = None
         self.overlay.calibrating = False
         self.show()
-        if points is None:
+        if result is None:
             self.overlay.refresh_visibility()
             return
+        key = screen_key(screen)
+        previous = self.store.settings.overlay_adjustments.get(key)
+        previous_screen = self.store.settings.overlay_screen
+        self.store.settings.overlay_screen = key
+        self.store.settings.overlay_adjustments[key] = list(result)
         try:
-            self.overlay.calibrate(cells, points, geometry)
-        except ValueError as exc:
-            self.show_error(str(exc))
+            self.store.save()
+        except OSError as exc:
+            self.store.settings.overlay_screen = previous_screen
+            if previous is None:
+                self.store.settings.overlay_adjustments.pop(key)
+            else:
+                self.store.settings.overlay_adjustments[key] = previous
+            self.show_error(f"Enregistrement impossible : {exc}")
             self.overlay.refresh_visibility()
             return
-        self.overlay_status.setText("Calé · recalibrer après déplacement, redimensionnement ou zoom de Dofus")
+        self.overlay.configure(screen.geometry(), result)
+        self.overlay_status.setText("Réglage mémorisé pour cet écran et cette résolution")
         self.overlay_enabled.setChecked(True)
         self.overlay.refresh_visibility()
 
@@ -673,10 +665,10 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.shutting_down = True
-        if self.calibration is not None:
-            self.calibration.finished.disconnect()
-            self.calibration.close()
-            self.calibration = None
+        if self.adjustment is not None:
+            self.adjustment.finished.disconnect()
+            self.adjustment.close()
+            self.adjustment = None
         self.overlay.timer.stop()
         self.overlay.close()
         with self.preparation_lock:

@@ -1,11 +1,12 @@
 """Ground projection, eligibility and disappearance of accessibility markers."""
 import pytest
-from PySide6.QtCore import QPoint, QPointF, QRect, Qt
+from PySide6.QtCore import QPointF, QRect, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from voix_des_douze.harvest import Resource
-from voix_des_douze.overlay import CalibrationOverlay, ResourceOverlay, calibration_transform, cell_point
+from voix_des_douze.overlay import AdjustmentOverlay, ResourceOverlay, fullscreen_transform, cell_point
+from voix_des_douze.settings import Store
 
 
 @pytest.fixture(scope="module")
@@ -13,20 +14,18 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def test_calibration_projects_even_and_odd_rows_with_screen_offset():
-    transform = calibration_transform((0, 13, 546),
-                                      (QPointF(110, 80), QPointF(1410, 80), QPointF(160, 860)))
-    # One complete even/odd stagger and the far corner, not only fitted anchors.
-    assert transform.map(cell_point(14)) == QPointF(160, 100)
-    assert transform.map(cell_point(28)) == QPointF(110, 120)
-    assert transform.map(cell_point(559)) == QPointF(1460, 860)
-
-
-def test_unusable_calibration_is_rejected():
-    with pytest.raises(ValueError):
-        calibration_transform((0, 1, 2), (QPointF(0, 0), QPointF(10, 0), QPointF(0, 10)))
-    with pytest.raises(ValueError):
-        calibration_transform((0, 13, 546), (QPointF(10, 10), QPointF(20, 20), QPointF(30, 30)))
+def test_fullscreen_shift_and_scale_keep_the_centre_and_grid_spacing():
+    geometry = QRect(1920, 0, 1920, 1080)
+    original = fullscreen_transform(geometry, (0, 0, 1))
+    shifted = fullscreen_transform(geometry, (30, -20, 1))
+    enlarged = fullscreen_transform(geometry, (30, -20, 2))
+    centre = QPointF(6.75, 19.5)
+    assert shifted.map(centre) == QPointF(990, 520)
+    assert enlarged.map(centre) == shifted.map(centre)
+    for cell in (0, 14, 28, 559):
+        assert shifted.map(cell_point(cell)) == original.map(cell_point(cell)) + QPointF(30, -20)
+        assert enlarged.map(cell_point(cell)) - shifted.map(centre) == (
+            shifted.map(cell_point(cell)) - shifted.map(centre)) * 2
     for cell in (-1, 560):
         with pytest.raises(ValueError):
             cell_point(cell)
@@ -38,8 +37,7 @@ def test_only_personally_harvestable_cells_appear_and_stale_markers_clear(app):
     overlay.pid = 123
     overlay.enabled = True
     try:
-        overlay.calibrate((0, 13, 546), (QPointF(100, 80), QPointF(750, 80), QPointF(125, 470)),
-                          QRect(0, 0, 900, 600))
+        overlay.configure(QRect(0, 0, 900, 600), (0, 0, 1))
         overlay.set_resources((Resource(1, 33, "Châtaignier", 100, 0, True),
                                Resource(2, 33, "Interdite", 101, 0, False),
                                Resource(3, 33, "Immature", 102, 1, True),
@@ -70,20 +68,45 @@ def test_only_personally_harvestable_cells_appear_and_stale_markers_clear(app):
         overlay.timer.stop()
 
 
-def test_calibration_collects_three_clicks_or_cancels_without_result(app):
+def test_keyboard_adjustment_commits_and_persists_without_mutating_on_cancel(app, tmp_path):
+    settings = Store(tmp_path / "settings.json")
+    key = "screen:1920x1080"
+    saved = [12, 24, 1]
+    settings.settings.overlay_adjustments[key] = saved
     results = []
-    calibration = CalibrationOverlay((0, 13, 546), app.primaryScreen())
-    calibration.finished.connect(results.append)
-    calibration.show()
-    QTest.mouseClick(calibration, Qt.LeftButton, pos=QPoint(100, 150))
-    QTest.mouseClick(calibration, Qt.LeftButton, pos=QPoint(500, 150))
+    adjustment = AdjustmentOverlay(app.primaryScreen(), (), saved)
+    adjustment.finished.connect(results.append)
+    adjustment.show()
+    QTest.keyClick(adjustment, Qt.Key_Right)
+    QTest.keyClick(adjustment, Qt.Key_Down, Qt.ShiftModifier)
+    QTest.keyClick(adjustment, Qt.Key_Plus)
+    assert saved == [12, 24, 1]
     assert results == []
-    QTest.mouseClick(calibration, Qt.LeftButton, pos=QPoint(120, 450))
-    assert results == [(QPointF(100, 150), QPointF(500, 150), QPointF(120, 450))]
-    assert not calibration.isVisible()
-    cancelled = CalibrationOverlay((0, 13, 546), app.primaryScreen())
+    QTest.keyClick(adjustment, Qt.Key_Return)
+    assert results == [(13, 34, 1.01)]
+    assert not adjustment.isVisible()
+    settings.settings.overlay_adjustments[key] = list(results[0])
+    settings.save()
+    restored = Store(settings.path).settings.overlay_adjustments[key]
+    assert restored == [13, 34, 1.01]
+    cancelled = AdjustmentOverlay(app.primaryScreen(), (), restored)
     cancelled.finished.connect(results.append)
     cancelled.show()
+    QTest.keyClick(cancelled, Qt.Key_Left)
+    QTest.keyClick(cancelled, Qt.Key_Minus)
     QTest.keyClick(cancelled, Qt.Key_Escape)
     assert results[-1] is None
+    assert Store(settings.path).settings.overlay_adjustments[key] == [13, 34, 1.01]
     assert not cancelled.isVisible()
+
+
+def test_keyboard_scaling_is_bounded(app):
+    adjustment = AdjustmentOverlay(app.primaryScreen(), (), (0, 0, 3))
+    try:
+        QTest.keyClick(adjustment, Qt.Key_Plus)
+        assert adjustment.adjustment[2] == 3
+        adjustment.adjustment[2] = 0.2
+        QTest.keyClick(adjustment, Qt.Key_Minus)
+        assert adjustment.adjustment[2] == 0.2
+    finally:
+        adjustment.close()

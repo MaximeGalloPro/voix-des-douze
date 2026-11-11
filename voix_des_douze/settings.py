@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 import json
+import math
 import os
 from pathlib import Path
 import tempfile
@@ -34,6 +35,8 @@ class Settings:
     engine_assignments: dict[str, dict[str, str]] = field(default_factory=dict)
     shortcuts: dict[str, str] = field(default_factory=lambda: {
         "toggle": "F6", "stop": "F7", "replay": "F8"})
+    overlay_screen: str = ""
+    overlay_adjustments: dict[str, list[float]] = field(default_factory=dict)
 
 
 class Store:
@@ -60,6 +63,13 @@ class Store:
                     raise ValueError("Configuration des moteurs invalide")
                 if not all(isinstance(v, dict) for v in s.engine_assignments.values()):
                     raise ValueError("Attributions des moteurs invalides")
+                if not isinstance(s.overlay_screen, str) or not isinstance(s.overlay_adjustments, dict):
+                    raise ValueError("Réglage des repères invalide")
+                for adjustment in s.overlay_adjustments.values():
+                    if (not isinstance(adjustment, list) or len(adjustment) != 3
+                            or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in adjustment)
+                            or not 0.2 <= adjustment[2] <= 3):
+                        raise ValueError("Décalage ou échelle des repères invalide")
                 if migrated:
                     backup = self.path.with_name(self.path.stem + "-before-network.json")
                     if not backup.exists():

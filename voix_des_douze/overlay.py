@@ -1,4 +1,4 @@
-"""Click-through, manually calibrated ground-cell markers; no game interaction."""
+"""External fullscreen resource markers and keyboard adjustment; no game interaction."""
 from __future__ import annotations
 
 import ctypes as C
@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QTransform
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen, QTransform
 from PySide6.QtWidgets import QWidget
 
 
@@ -18,25 +18,34 @@ def cell_point(cell):
     return QPointF(column + (row % 2) / 2, row)
 
 
-def calibration_transform(cells, points):
-    """Fit an affine ground plane to three non-collinear cell centres."""
-    a, b, c = (cell_point(cell) for cell in cells)
-    u, v = b - a, c - a
-    determinant = u.x() * v.y() - u.y() * v.x()
-    if abs(determinant) < 0.001:
-        raise ValueError("Choisissez trois cases non alignées sur la grille.")
-    p, q, r = points
-    s, t = q - p, r - p
-    xx = (s.x() * v.y() - t.x() * u.y()) / determinant
-    xy = (t.x() * u.x() - s.x() * v.x()) / determinant
-    yx = (s.y() * v.y() - t.y() * u.y()) / determinant
-    yy = (t.y() * u.x() - s.y() * v.x()) / determinant
-    result = QTransform(xx, yx, xy, yy,
-                        p.x() - xx * a.x() - xy * a.y(),
-                        p.y() - yx * a.x() - yy * a.y())
-    if not result.isInvertible():
-        raise ValueError("Les trois points à l’écran doivent être distincts et non alignés.")
-    return result
+def fullscreen_transform(geometry, adjustment):
+    """Centre the staggered grid; uniform scaling keeps the ground diamonds intact."""
+    x, y, scale = adjustment
+    step = min(geometry.width() / 14, geometry.height() / 10) * 0.9 * scale
+    return QTransform(step, 0, 0, step / 4,
+                      geometry.width() / 2 + x - 6.75 * step,
+                      geometry.height() / 2 + y - 19.5 * step / 4)
+
+
+def screen_key(screen):
+    size = screen.geometry().size()
+    return f"{screen.name()}:{size.width()}x{size.height()}"
+
+
+def fullscreen_spaces(widget):
+    """Allow external overlays in native macOS fullscreen Spaces."""
+    if sys.platform != "darwin" or QGuiApplication.platformName() != "cocoa":
+        return
+    objc = C.CDLL("/usr/lib/libobjc.A.dylib")
+    selector = objc.sel_registerName
+    selector.argtypes = [C.c_char_p]
+    selector.restype = C.c_void_p
+    message = C.CFUNCTYPE(C.c_void_p, C.c_void_p, C.c_void_p)(("objc_msgSend", objc))
+    window = message(int(widget.winId()), selector(b"window"))
+    get = C.CFUNCTYPE(C.c_ulong, C.c_void_p, C.c_void_p)(("objc_msgSend", objc))
+    set_behavior = C.CFUNCTYPE(None, C.c_void_p, C.c_void_p, C.c_ulong)(("objc_msgSend", objc))
+    set_behavior(window, selector(b"setCollectionBehavior:"),
+                 (get(window, selector(b"collectionBehavior")) & ~(2 | 128)) | 1 | 256)
 
 
 class ProcessSerialNumber(C.Structure):
@@ -89,11 +98,14 @@ class ResourceOverlay(QWidget):
         self.timer.timeout.connect(self.refresh_visibility)
         self.timer.start()
 
-    def calibrate(self, cells, points, geometry):
-        transform = calibration_transform(cells, points)
-        self.transform = transform
+    def configure(self, geometry, adjustment):
+        self.transform = fullscreen_transform(geometry, adjustment)
         self.setGeometry(geometry)
         self.rebuild()
+
+    def showEvent(self, event):
+        fullscreen_spaces(self)
+        super().showEvent(event)
 
     def set_resources(self, resources):
         self.resources = resources
@@ -134,46 +146,67 @@ class ResourceOverlay(QWidget):
             painter.drawText(QPointF(x + 8, y + metrics.ascent() + 4), marker.label)
 
 
-class CalibrationOverlay(QWidget):
+class AdjustmentOverlay(QWidget):
     finished = Signal(object)
 
-    def __init__(self, cells, screen):
+    def __init__(self, screen, resources, adjustment):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setGeometry(screen.geometry())
-        self.setCursor(Qt.CrossCursor)
-        self.cells = cells
-        self.points = []
+        self.adjustment = list(adjustment)
+        self.resources = tuple(r for r in resources if r.harvestable and 0 <= r.cell < 560)
         self.completed = False
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def showEvent(self, event):
+        fullscreen_spaces(self)
+        super().showEvent(event)
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        # Nonzero alpha across the window ensures native macOS receives the clicks.
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 35))
-        painter.fillRect(20, 20, self.width() - 40, 100, QColor(0, 0, 0, 230))
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 20))
+        transform = fullscreen_transform(self.geometry(), self.adjustment)
+        painter.setPen(QPen(QColor(255, 235, 0, 90), 1))
+        # A grid remains adjustable even before receiving any resource positions.
+        for cell in range(560):
+            point = transform.map(cell_point(cell))
+            painter.drawEllipse(point, 2, 2)
+        painter.setFont(QFont("", 16, QFont.Bold))
+        for resource in self.resources:
+            point = transform.map(cell_point(resource.cell))
+            painter.setPen(QPen(QColor("#000000"), 9))
+            painter.drawEllipse(point, 19, 19)
+            painter.setPen(QPen(QColor("#ffeb00"), 4))
+            painter.drawEllipse(point, 19, 19)
+            painter.drawText(point + QPointF(24, 0), resource.name)
+        painter.fillRect(15, 15, self.width() - 30, 110, QColor(0, 0, 0, 235))
         painter.setPen(QColor("#ffffff"))
-        painter.setFont(QFont("", 18, QFont.Bold))
-        cell = self.cells[min(len(self.points), 2)]
-        painter.drawText(35, 57, f"Repère {len(self.points) + 1}/3 : cliquez au centre au sol de la case {cell}")
-        painter.drawText(35, 94, "Pas sur le feuillage de l’arbre · Échap pour annuler · aucun clic envoyé au jeu")
-        painter.setPen(QPen(QColor("#ffeb00"), 4))
-        for point in self.points:
-            painter.drawEllipse(point, 12, 12)
-
-    def mousePressEvent(self, event):
-        if event.button() != Qt.LeftButton:
-            return
-        self.points.append(event.position())
-        if len(self.points) == 3:
-            self.completed = True
-            self.finished.emit(tuple(self.points))
-            self.close()
-        else:
-            self.update()
+        painter.drawText(30, 45, "Flèches : déplacer · Maj + flèches : déplacement rapide · + / − : échelle")
+        painter.drawText(30, 77, "Entrée : mémoriser · Échap : annuler · touches et clics non transmis au jeu")
+        x, y, scale = self.adjustment
+        painter.drawText(30, 109, f"Décalage : {x:g}, {y:g} px · Échelle : {scale:.0%}")
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Escape:
+        key = event.key()
+        step = 10 if event.modifiers() & Qt.ShiftModifier else 1
+        moves = {Qt.Key_Left: (-step, 0), Qt.Key_Right: (step, 0),
+                 Qt.Key_Up: (0, -step), Qt.Key_Down: (0, step)}
+        if key in moves:
+            dx, dy = moves[key]
+            self.adjustment[0] += dx
+            self.adjustment[1] += dy
+        elif key in (Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus):
+            change = -0.01 if key == Qt.Key_Minus else 0.01
+            self.adjustment[2] = round(max(0.2, min(3.0, self.adjustment[2] + change)), 2)
+        elif key in (Qt.Key_Return, Qt.Key_Enter):
+            self.completed = True
+            self.finished.emit(tuple(self.adjustment))
             self.close()
+        elif key == Qt.Key_Escape:
+            self.close()
+        self.update()
+        event.accept()
 
     def closeEvent(self, event):
         if not self.completed:
