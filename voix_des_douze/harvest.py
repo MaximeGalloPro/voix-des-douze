@@ -1,4 +1,4 @@
-"""Passive resource state for the observed Dofus build; no profession eligibility."""
+"""Passive resource state and server-advertised harvest availability."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,6 +16,17 @@ class Resource:
     name: str
     cell: int
     state: int
+    harvest_enabled: bool
+
+    @property
+    def harvestable(self):
+        return self.state == 0 and self.harvest_enabled
+
+    @property
+    def availability(self):
+        if self.state != 0:
+            return "État inconnu" if self.state not in (1, 2) else "Non · " + self.status.lower()
+        return "Oui" if self.harvest_enabled else "Non · action indisponible"
 
     @property
     def status(self):
@@ -33,6 +44,10 @@ class ResourceSnapshot:
     @property
     def mature_count(self):
         return sum(resource.state == 0 for resource in self.resources)
+
+    @property
+    def harvestable_count(self):
+        return sum(resource.harvestable for resource in self.resources)
 
 
 class HarvestTracker:
@@ -57,13 +72,15 @@ class HarvestTracker:
 
     @staticmethod
     def _interactive(body):
-        # Both skill lists matter: maturity is independent of profession level.
+        # Keep enabled (5) and disabled (3) actions separate for this character.
         element_id = integer(body, 6)
         if element_id is None:
             raise ProtocolError("Élément interactif sans identifiant.")
-        skills = frozenset(integer(fields(value), 3) for number, wire, value in body
-                           if number in (3, 5) and wire == 2)
-        return element_id, (integer(body, 4, -1), skills)
+        enabled = frozenset(integer(fields(value), 3) for number, wire, value in body
+                            if number == 5 and wire == 2)
+        disabled = frozenset(integer(fields(value), 3) for number, wire, value in body
+                             if number == 3 and wire == 2)
+        return element_id, (integer(body, 4, -1), enabled, disabled)
 
     def handle(self, direction, key, raw):
         if direction != "server" or key not in ("jnj", "itw", "itx"):
@@ -101,11 +118,12 @@ class HarvestTracker:
             if not applied:
                 return
         resources = []
-        for element_id, (type_id, skills) in self.interactives.items():
-            if element_id not in self.states or not skills.intersection(self.harvest_skills):
+        for element_id, (type_id, enabled, disabled) in self.interactives.items():
+            if element_id not in self.states or not (enabled | disabled).intersection(self.harvest_skills):
                 continue
             cell, state = self.states[element_id]
-            resources.append(Resource(element_id, type_id, self.names.get(str(type_id), f"Type {type_id}"), cell, state))
+            resources.append(Resource(element_id, type_id, self.names.get(str(type_id), f"Type {type_id}"),
+                                      cell, state, bool(enabled.intersection(self.harvest_skills))))
         self.emit(ResourceSnapshot(self.map_id, changed_map,
                                    tuple(sorted(resources, key=lambda resource: (resource.name, resource.element_id))),
                                    len(self.interactives) - len(resources), key))

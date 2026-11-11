@@ -117,15 +117,15 @@ class MainWindow(QMainWindow):
         self.resource_summary.setWordWrap(True)
         self.resource_summary.setAccessibleName("Résumé des ressources détectées")
         resource_layout.addWidget(self.resource_summary)
-        self.resource_table = QTableWidget(0, 5)
-        self.resource_table.setHorizontalHeaderLabels(["Ressource", "État", "Case", "Identifiant", "Type"])
+        self.resource_table = QTableWidget(0, 6)
+        self.resource_table.setHorizontalHeaderLabels(["Ressource", "État", "Récoltable par vous", "Case", "Identifiant", "Type"])
         self.resource_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.resource_table.setAccessibleName("Ressources détectées sur la carte courante")
         self.resource_table.setMaximumHeight(170)
         self.resource_table.horizontalHeader().setStretchLastSection(True)
         resource_layout.addWidget(self.resource_table)
         resource_controls = QHBoxLayout()
-        resource_controls.addWidget(QLabel("Maturité uniquement · niveau de métier non vérifié · aucune lecture d’écran"))
+        resource_controls.addWidget(QLabel("Récoltable = mature et action disponible pour ce personnage · aucune lecture d’écran"))
         resource_controls.addStretch()
         self.button(resource_controls, "Tester le son", self.test_resource_sound)
         resource_layout.addLayout(resource_controls)
@@ -464,15 +464,15 @@ class MainWindow(QMainWindow):
         unknown = len(snapshot.resources) - mature - immature - harvesting
         self.resource_summary.setText(
             f"Carte {snapshot.map_id} · {len(snapshot.resources)} ressources : "
-            f"matures : {mature} · non matures : {immature} · en récolte : {harvesting} · inconnues : {unknown}"
+            f"récoltables par vous : {snapshot.harvestable_count} · matures : {mature} · non matures : {immature} · en récolte : {harvesting} · inconnues : {unknown}"
             f" · {snapshot.other_elements} autres éléments · message {snapshot.source}")
         self.resource_table.setRowCount(len(snapshot.resources))
         for row, resource in enumerate(snapshot.resources):
-            for column, value in enumerate((resource.name, resource.status, resource.cell,
-                                            resource.element_id, resource.type_id)):
+            for column, value in enumerate((resource.name, resource.status, resource.availability,
+                                            resource.cell, resource.element_id, resource.type_id)):
                 self.resource_table.setItem(row, column, QTableWidgetItem(str(value)))
         self.resource_table.resizeColumnsToContents()
-        if snapshot.changed_map and mature:
+        if snapshot.changed_map and snapshot.harvestable_count:
             self.test_resource_sound()
 
     def show_network_dialogue(self, kind, value):

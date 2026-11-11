@@ -28,6 +28,10 @@ def test_observed_chestnuts_count_maturity_independently_of_skill_availability()
     snapshot = snapshots[-1]
     assert snapshot.map_id == 100 and snapshot.changed_map
     assert snapshot.mature_count == 2
+    assert snapshot.harvestable_count == 1
+    assert [(r.element_id, r.harvestable) for r in snapshot.resources] == [
+        (466502, False), (466503, True), (466504, False),
+    ]
     assert [(r.element_id, r.name, r.status) for r in snapshot.resources] == [
         (466502, "Châtaignier", "Non mature"),
         (466503, "Châtaignier", "Mature"),
@@ -36,6 +40,7 @@ def test_observed_chestnuts_count_maturity_independently_of_skill_availability()
     # Delta omits the membership flag: keep the current-map membership.
     tracker.handle("server", "itw", blob(1, stated(466503, 287, 2, current=False)))
     assert snapshots[-1].mature_count == 1
+    assert snapshots[-1].harvestable_count == 0
     assert not snapshots[-1].changed_map
     assert next(r for r in snapshots[-1].resources if r.element_id == 466503).status == "Récolte en cours"
     tracker.handle("server", "itw", blob(1, stated(466503, 287, 1, current=False)))
@@ -83,3 +88,24 @@ def test_unknown_states_stay_unknown_and_deltas_before_sync_are_ignored():
     tracker.handle("server", "itx", blob(1, interactive(1, skill=999999, current=False)))
     assert snapshots[-1].resources == ()
     assert not snapshots[-1].changed_map
+
+
+def test_personal_availability_updates_without_changing_maturity():
+    snapshots = []
+    tracker = HarvestTracker(snapshots.append)
+    # A usable non-harvest action must not make a disabled harvest available.
+    mixed = interactive(1, enabled=False) + blob(5, num(3, 999999))
+    tracker.handle("server", "jnj", map_message(100, [(stated(1, 100), mixed)]))
+    assert snapshots[-1].mature_count == 1
+    assert snapshots[-1].harvestable_count == 0
+    tracker.handle("server", "itx", blob(1, interactive(1, current=False)))
+    assert snapshots[-1].harvestable_count == 1
+    assert not snapshots[-1].changed_map
+    tracker.handle("server", "itx", blob(1, interactive(1, current=False, enabled=False)))
+    assert snapshots[-1].mature_count == 1
+    assert snapshots[-1].harvestable_count == 0
+    # Another character/session snapshot must replace previous permissions.
+    tracker.handle("server", "jnj", map_message(101, [(stated(1, 100), interactive(1))]))
+    assert snapshots[-1].harvestable_count == 1
+    tracker.handle("server", "jnj", map_message(102, [(stated(1, 100, 9), interactive(1))]))
+    assert snapshots[-1].harvestable_count == 0
