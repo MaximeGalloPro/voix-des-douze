@@ -85,6 +85,8 @@ class ResourceOverlay(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        # Qt.Tool otherwise hides its NSPanel when the game becomes active.
+        self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
         self.setAccessibleName("Repères des ressources récoltables")
         self.resources = ()
         self.markers = ()

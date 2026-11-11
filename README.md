@@ -49,6 +49,8 @@ Cocher **Repères sur Dofus** réutilise le dernier écran choisi et son réglag
 
 La projection utilise une grille décalée de 14 colonnes / 560 cases avec une échelle uniforme. Elle marque les cases au sol, pas le contour des décors ni le relief. Le plein écran est l’hypothèse de placement : changer le zoom du jeu impose de réajuster l’échelle. Une déformation différente en largeur et hauteur ne se corrige pas avec ce réglage uniforme. Les fenêtres externes sont configurées pour rejoindre les Spaces plein écran macOS (`CanJoinAllSpaces` et `FullScreenAuxiliary`) ; le résultat sur le plein écran réel de Dofus Unity et l’alignement sur sa carte restent à valider en jeu. Aucune permission de capture d’écran ou d’Accessibilité n’est ajoutée.
 
+L’overlay de ressources utilise aussi `WA_MacAlwaysShowToolWindow` : sans cet attribut, macOS masque la fenêtre outil quand Voix des Douze perd le premier plan, même avec les options Spaces activées. Le contrôle du processus Dofus au premier plan reste assuré par l’application. Vérification native du correctif : fenêtre toujours visible après activation de Dofus, `hidesOnDeactivate = 0`, clics traversants conservés.
+
 Vérification : `python -m pytest tests/test_overlay.py tests/test_harvest.py -q`. Le parcours natif Cocoa exerce le réglage dans la fenêtre principale, la validation et sa persistance après réouverture, l’annulation, ainsi que les propriétés natives de Spaces et `NSWindow.ignoresMouseEvents`. Il ne remplace pas la vérification sur une carte réelle.
 
 
