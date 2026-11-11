@@ -1,6 +1,7 @@
-"""Opt-in, one-shot resource click; never controls travel or repeats a harvest."""
+"""Opt-in arrival click and cancellable debug pass; never controls travel."""
 from __future__ import annotations
 
+from collections import deque
 import ctypes as C
 import json
 import os
@@ -11,7 +12,7 @@ import sys
 import tempfile
 import time
 
-from PySide6.QtCore import QObject, QPointF, QTimer
+from PySide6.QtCore import QObject, QPointF, Qt, QTimer
 
 from .overlay import ForegroundProcess, cell_point, fullscreen_transform, screen_key
 from .settings import data_directory
@@ -129,7 +130,12 @@ class FirstResourceClick(QObject):
         self.snapshot = None
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
-        self.timer.setInterval(700)
+        self.timer.setTimerType(Qt.PreciseTimer)
+        self.debug_targets = deque()
+        self.debug_timer = QTimer(self)
+        self.debug_timer.setSingleShot(True)
+        self.debug_timer.setTimerType(Qt.PreciseTimer)
+        self.debug_timer.timeout.connect(self.debug_next)
         self.timer.timeout.connect(self.click)
 
     def record(self, stage, **fields):
@@ -156,6 +162,7 @@ class FirstResourceClick(QObject):
         self.record("début")
 
     def stop_debug(self):
+        self.cancel_debug_sequence()
         self.window.overlay.clear_click_target()
         if self.file is not None:
             self.file.close()
@@ -164,11 +171,42 @@ class FirstResourceClick(QObject):
     def manual_click(self):
         if self.file is None:
             return
+        if self.debug_timer.isActive() or self.debug_targets:
+            self.cancel_debug_sequence()
+            self.record("séquence annulée", raison="nouvel appui sur :")
+            return
         self.record("raccourci : reçu")
         self.timer.stop()
-        self.click(manual=True)
+        if self.snapshot is not None:
+            self.debug_targets.extend(dict.fromkeys(
+                r.element_id for r in self.snapshot.resources
+                if r.harvestable and 0 <= r.cell < 560))
+        self.debug_next()
+
+    def cancel_debug_sequence(self):
+        self.debug_timer.stop()
+        self.debug_targets.clear()
+
+    def debug_next(self):
+        if self.file is None or self.snapshot is None:
+            self.cancel_debug_sequence()
+            return
+        available = {r.element_id for r in self.snapshot.resources if r.harvestable}
+        while self.debug_targets:
+            element_id = self.debug_targets.popleft()
+            if element_id not in available:
+                continue
+            if not self.click(manual=True, element_id=element_id):
+                self.cancel_debug_sequence()
+                return
+            if self.debug_targets and self.file is not None:
+                delay = random.randint(700, 1000)
+                self.debug_timer.start(delay)
+                self.record("suite debug programmée", délai_ms=delay)
+            return
 
     def clear(self):
+        self.cancel_debug_sequence()
         self.timer.stop()
         self.window.overlay.clear_click_target()
         self.record("annulation", raison="ressources effacées")
@@ -181,14 +219,15 @@ class FirstResourceClick(QObject):
             {"élément": r.element_id, "case": r.cell, "état": r.state, "récoltable": r.harvestable}
             for r in snapshot.resources])
         if previous is None or previous.map_id != snapshot.map_id:
+            self.cancel_debug_sequence()
             self.window.overlay.clear_click_target()
             self.timer.stop()
             # First synchronization is not an arrival: it can occur mid-action.
             if previous is not None and self.window.first_resource.isChecked():
-                self.timer.start()
+                self.timer.start(random.randint(700, 850))
                 self.record("arrivée programmée", délai_ms=self.timer.interval())
 
-    def click(self, manual=False):
+    def click(self, manual=False, element_id=None):
         w = self.window
         snapshot = self.snapshot
         foreground = w.overlay.foreground()
@@ -219,10 +258,14 @@ class FirstResourceClick(QObject):
         transform = fullscreen_transform(geometry, adjustment)
         candidates = []
         for resource in snapshot.resources:
-            if resource.harvestable and 0 <= resource.cell < 560:
+            if (resource.harvestable and 0 <= resource.cell < 560
+                    and (element_id is None or resource.element_id == element_id)):
                 local = transform.map(cell_point(resource.cell))
                 if 0 <= local.x() < geometry.width() and 0 <= local.y() < geometry.height():
                     candidates.append((resource, local + QPointF(geometry.topLeft())))
+        if not candidates and element_id is not None:
+            self.record("cible ignorée", élément=element_id, raison="hors écran ou indisponible")
+            return True
         if not candidates:
             self.record("bloqué", raison="aucune ressource récoltable projetée dans l’écran")
             if manual:
@@ -241,3 +284,4 @@ class FirstResourceClick(QObject):
             return
         self.record("clic envoyé", récolte_confirmée=False)
         w.status.setText(f"Premier clic envoyé : {resource.name}, case {resource.cell} · récolte non confirmée")
+        return True

@@ -152,7 +152,8 @@ def test_manual_debug_first_target_without_automatic_and_logs_blockers(assist, t
     assert "Blé, case 280" in w.status.text()
     assert len(clicks) == 1
     w.overlay.foreground = lambda: 456
-    c.manual_click()
+    c.debug_timer.stop()
+    c.debug_next()
     assert len(clicks) == 1
     assert "hors premier plan" in errors[-1]
     path = c.debug_path
@@ -220,3 +221,49 @@ def test_focus_lost_during_native_window_check_blocks_global_click():
     with pytest.raises(RuntimeError, match="hors premier plan"):
         click(123, QPointF(400, 300), QRect(0, 0, 800, 600))
     assert posted == []
+
+
+def test_debug_sequence_visits_each_remaining_target_once(assist, tmp_path):
+    w, c, clicks, errors = assist
+    w.first_resource.setChecked(False)
+    resources = (
+        Resource(1, 1, "Blé", 280, 0, True),
+        Resource(2, 1, "Orge", 281, 0, True),
+        Resource(3, 1, "Sauge", 282, 0, True),
+    )
+    c.update(ResourceSnapshot(1, True, resources, 0, "jnj"))
+    c.start_debug(tmp_path)
+    c.manual_click()
+    assert len(clicks) == 1
+    assert 700 <= c.debug_timer.interval() <= 1000
+    # The second resource disappears before its turn; do not click it or new arrivals.
+    c.update(ResourceSnapshot(1, False, (resources[0], resources[2],
+        Resource(4, 1, "Frêne", 283, 0, True)), 0, "jnj"))
+    c.debug_timer.stop()
+    c.debug_next()
+    assert len(clicks) == 2
+    assert "Sauge, case 282" in w.status.text()
+    assert not c.debug_targets and not c.debug_timer.isActive()
+    assert errors == []
+
+
+@pytest.mark.parametrize("action", ["key", "map", "stop", "clear"])
+def test_debug_sequence_cancellation_discards_remaining_targets(assist, tmp_path, action):
+    w, c, clicks, errors = assist
+    resources = (snapshot(1).resources[0], Resource(2, 1, "Orge", 281, 0, True))
+    c.update(ResourceSnapshot(1, True, resources, 0, "jnj"))
+    c.start_debug(tmp_path)
+    c.manual_click()
+    if action == "key":
+        c.manual_click()
+    elif action == "map":
+        c.update(snapshot(2))
+        assert 700 <= c.timer.interval() <= 850
+    elif action == "stop":
+        c.stop_debug()
+    else:
+        c.clear()
+    assert not c.debug_timer.isActive()
+    assert not c.debug_targets
+    c.debug_next()
+    assert len(clicks) == 1
