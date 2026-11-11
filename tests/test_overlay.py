@@ -127,3 +127,41 @@ def test_adjustment_includes_unavailable_resources_but_excludes_unknown_cells(ap
         assert adjustment.resources == resources[:5]
     finally:
         adjustment.close()
+
+
+def test_debug_is_opt_in_scoped_and_ignores_text(app, tmp_path):
+    normal = AdjustmentOverlay(app.primaryScreen(), (), (0, 0, 1), debug_directory=tmp_path)
+    normal.show()
+    QTest.keyClick(normal, Qt.Key_Right)
+    normal.close()
+    assert list(tmp_path.iterdir()) == []
+
+    import json
+    panel = AdjustmentOverlay(app.primaryScreen(), (), (0, 0, 1),
+                              debug=True, debug_directory=tmp_path)
+    panel.show()
+    QTest.keyClicks(panel, "secret")
+    QTest.keyClick(panel, Qt.Key_Right, Qt.ShiftModifier)
+    QTest.keyClick(panel, Qt.Key_Escape)
+    journal = panel.debug.path.read_text()
+    rows = [json.loads(line) for line in journal.splitlines()]
+    assert "secret" not in journal
+    assert [row["touche"] for row in rows if row["étape"] == "qt"] == ["droite", "échap"]
+    assert [row["réglage"] for row in rows if row["étape"] == "appliqué"] == [[10, 0, 1]]
+    assert rows[-1]["étape"] == "fin"
+    assert not panel.debug.timer.isActive()
+    assert panel.debug.path.stat().st_mode & 0o777 == 0o600
+    QTest.keyClick(panel, Qt.Key_Left)
+    assert panel.debug.path.read_text() == journal
+
+
+def test_debug_write_limit_stops_logging_but_not_adjustment(app, tmp_path):
+    panel = AdjustmentOverlay(app.primaryScreen(), (), (0, 0, 1),
+                              debug=True, debug_directory=tmp_path)
+    panel.show()
+    panel.debug.MAX_BYTES = 1
+    QTest.keyClick(panel, Qt.Key_Right)
+    assert panel.adjustment == [1, 0, 1]
+    assert panel.debug.file is None
+    assert panel.debug.error
+    panel.close()

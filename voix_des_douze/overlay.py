@@ -162,7 +162,7 @@ class ResourceOverlay(QWidget):
 class AdjustmentOverlay(QWidget):
     finished = Signal(object)
 
-    def __init__(self, screen, resources, adjustment):
+    def __init__(self, screen, resources, adjustment, *, debug=False, debug_directory=None):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -172,6 +172,10 @@ class AdjustmentOverlay(QWidget):
         self.resources = tuple(r for r in resources if 0 <= r.cell < 560)
         self.completed = False
         self.setFocusPolicy(Qt.StrongFocus)
+        self.debug = None
+        if debug:
+            from .overlay_debug import AdjustmentDebug
+            self.debug = AdjustmentDebug(self, debug_directory)
 
     def show(self):
         super().show()
@@ -186,6 +190,8 @@ class AdjustmentOverlay(QWidget):
             window = message(int(self.winId()), selector(b"window"))
             send = C.CFUNCTYPE(None, C.c_void_p, C.c_void_p)(("objc_msgSend", objc))
             send(window, selector(b"makeKeyWindow"))
+        if self.debug is not None:
+            self.debug.start()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -205,14 +211,20 @@ class AdjustmentOverlay(QWidget):
             painter.setPen(QPen(QColor("#ffeb00"), 4))
             painter.drawEllipse(point, 19, 19)
             painter.drawText(point + QPointF(24, 0), resource.name)
-        painter.fillRect(15, 15, self.width() - 30, 110, QColor(0, 0, 0, 235))
+        painter.fillRect(15, 15, self.width() - 30, 210 if self.debug else 110, QColor(0, 0, 0, 235))
         painter.setPen(QColor("#ffffff"))
         painter.drawText(30, 45, "Flèches : déplacer · Maj + flèches : déplacement rapide · + / − : échelle")
         painter.drawText(30, 77, "Entrée : mémoriser · Échap : annuler · touches et clics non transmis au jeu")
         x, y, scale = self.adjustment
         painter.drawText(30, 109, f"Décalage : {x:g}, {y:g} px · Échelle : {scale:.0%}")
+        if self.debug is not None:
+            painter.setFont(QFont("", 12))
+            for index, line in enumerate(self.debug.lines()):
+                painter.drawText(30, 140 + index * 28, line)
 
     def keyPressEvent(self, event):
+        if self.debug is not None:
+            self.debug.qt_key(event)
         key = event.key()
         step = 10 if event.modifiers() & Qt.ShiftModifier else 1
         moves = {Qt.Key_Left: (-step, 0), Qt.Key_Right: (step, 0),
@@ -230,10 +242,14 @@ class AdjustmentOverlay(QWidget):
             self.close()
         elif key == Qt.Key_Escape:
             self.close()
+        if self.debug is not None and key in (*moves, Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus):
+            self.debug.record("appliqué", réglage=list(self.adjustment))
         self.update()
         event.accept()
 
     def closeEvent(self, event):
+        if self.debug is not None:
+            self.debug.stop()
         if not self.completed:
             self.finished.emit(None)
         event.accept()

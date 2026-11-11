@@ -517,6 +517,11 @@ class MainWindow(QMainWindow):
             if screen == self.screen():
                 screen_combo.setCurrentIndex(index)
         layout.addWidget(screen_combo)
+        debug_checkbox = QCheckBox("Debug clavier pour ce réglage uniquement (bandeau + fichier local)")
+        debug_checkbox.setToolTip(
+            "Désactivé par défaut. Seulement les touches de réglage reçues par le panneau ; "
+            "aucun texte ni écoute globale. Arrêt à la fermeture du réglage.")
+        layout.addWidget(debug_checkbox)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText("Régler avec le clavier")
         buttons.accepted.connect(dialog.accept)
@@ -528,7 +533,8 @@ class MainWindow(QMainWindow):
         saved = self.store.settings.overlay_adjustments.get(screen_key(screen), [0, 0, 1])
         self.overlay.calibrating = True
         self.overlay.hide()
-        self.adjustment = AdjustmentOverlay(screen, self.overlay.resources, saved)
+        self.adjustment = AdjustmentOverlay(
+            screen, self.overlay.resources, saved, debug=debug_checkbox.isChecked())
         self.adjustment.finished.connect(
             lambda result: self.finish_overlay_adjustment(screen, result))
         self.hide()
