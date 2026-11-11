@@ -27,6 +27,7 @@ def model_directory() -> Path:
 class Settings:
     automatic: bool = True
     resource_sound: bool = True
+    first_resource_click: bool = False
     volume: float = 0.8
     speed: float = 1.0
     default_voice: str = ""

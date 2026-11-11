@@ -1,8 +1,8 @@
 # Voix des Douze
 
-Application **macOS locale** : événements du client Dofus choisi → nom et texte du PNJ → voix françaises **Piper, Sopro V2 Turbo ou Pocket TTS**, mémorisées par personnage et par moteur. Une alerte sonore signale aussi une carte contenant des ressources matures avec une action de récolte disponible pour le personnage suivi, avec un panneau de debug des ressources. Aucun OCR, capture d’écran, réécriture par LLM ou API payante. Aucun proxy, modification du client ou envoi d’action au jeu.
+Application **macOS locale** : événements du client Dofus choisi → nom et texte du PNJ → voix françaises **Piper, Sopro V2 Turbo ou Pocket TTS**, mémorisées par personnage et par moteur. Une alerte sonore signale aussi une carte contenant des ressources matures avec une action de récolte disponible pour le personnage suivi, avec un panneau de debug des ressources. Aucun OCR, capture d’écran, réécriture par LLM ou API payante. Aucun proxy ni modification du client. Une assistance optionnelle peut envoyer un premier clic de récolte au jeu ; elle est désactivée par défaut.
 
-Projet indépendant d’Ankama et de Romandub, sans affiliation ou approbation supposée. La lecture passive du réseau ne vaut pas autorisation d’Ankama ; sa compatibilité contractuelle doit être clarifiée avant diffusion communautaire.
+Projet indépendant d’Ankama et de Romandub, sans affiliation ou approbation supposée. La lecture passive du réseau ne vaut pas autorisation d’Ankama ; sa compatibilité contractuelle doit être clarifiée avant diffusion communautaire. Le premier clic automatique est une automatisation d’action : son objectif d’accessibilité ne garantit pas sa conformité aux règles du jeu ni l’absence de sanction.
 
 ## Installer et lancer
 
@@ -29,6 +29,12 @@ Après **Démarrer l’écoute**, changer de carte pour recevoir son état compl
 
 La case **Son des ressources** active ou coupe cette alerte uniquement, sans modifier les voix des PNJ ni les repères. Le choix est enregistré immédiatement et conservé après redémarrage. Décocher arrête aussi le son en cours et désactive **Tester le son** ; recocher réactive les prochaines alertes sans rejouer la carte courante.
 
+**Premier clic automatique à l’arrivée** (désactivé par défaut, choix mémorisé) : après une première carte de synchronisation sans clic, chaque changement de carte programme une unique tentative, 700 ms après réception de son état. La cible est choisie aléatoirement parmi les ressources alors matures avec action disponible et position valide dans l’écran. Les mises à jour reçues pendant ce délai sont prises en compte. Aucune nouvelle tentative après un échec, une repousse ou une récolte ; aucun clic au simple cochage de l’option.
+
+Prérequis : **Dofus plein écran au premier plan sur l’écran des repères préalablement réglés**, écoute active et autorisation **Réglages Système → Confidentialité et sécurité → Accessibilité** pour l’application qui lance Python. Le clic utilise les coordonnées des repères et est adressé uniquement au processus suivi ; sa fenêtre au premier plan doit remplir l’écran réglé. Décocher, arrêter/suspendre l’écoute ou régler les repères empêche la tentative en attente. Aucun clic différé au retour au premier plan.
+
+La position est celle de la case au sol, pas une détection de la zone cliquable du dessin. Le délai ne confirme pas la fin du chargement visuel ; un obstacle, une interface ouverte ou un réglage imprécis peut empêcher la récolte. « Clic envoyé » ne signifie pas « récolte démarrée ». **Le voyage reste entièrement géré par Dofus** : l’application n’envoie pas de commande d’arrêt/reprise et ne garantit pas qu’un clic interrompe son trajet.
+
 L’encart **Ressources de la carte · debug réseau** affiche l’identifiant de carte, le nombre de ressources récoltables par le personnage suivi et les nombres de ressources matures/non matures/en récolte/inconnues. Chaque ligne indique : nom, état, **Récoltable par vous**, case Dofus, identifiant d’élément et type. Il est mis à jour par les événements de carte et d’éléments, puis vidé à l’arrêt/suspension ou à la fin de session. Il décrit les données réseau de la carte courante, pas une reconnaissance de ce qui est visible à l’écran ni des coordonnées de souris.
 
 **Disponibilité annoncée par le serveur, pas lecture des niveaux de métier.** Les listes d’actions disponibles (champ 5) et indisponibles (champ 3) restent séparées : les deux servent à identifier une ressource, mais seule une action de récolte disponible, associée à un état mature, autorise l’alerte. Une action disponible sans rapport avec la récolte ne suffit pas. L’interface ne déduit pas la raison d’un refus (niveau, autre condition), ne garantit ni accessibilité du chemin ni réussite d’un clic et ne saisit aucun niveau manuellement. Les éléments voisins ne sont pas comptés ; un état inconnu ne déclenche pas l’alerte. La distinction personnelle reste expérimentale et doit être corroborée en jeu avec des ressources accessibles et inaccessibles au personnage.
@@ -39,7 +45,7 @@ Les métadonnées compactes sont livrées dans `models/harvest.json` : aucun té
 
 ### Repères visuels sur le jeu — POC local macOS
 
-L’option **Repères sur Dofus** affiche une fenêtre transparente au-dessus du jeu : un anneau jaune à contour noir et un nom en blanc pour chaque ressource mature dont l’action de récolte est disponible. Les mises à jour retirent immédiatement les repères devenus indisponibles. L’overlay laisse passer les clics, ne prend pas le focus et ne s’affiche que lorsque le processus Dofus suivi est au premier plan. Arrêter ou suspendre l’écoute efface les repères ; décocher l’option les masque sans arrêter l’écoute. Aucun clic, déplacement ou code n’est envoyé au jeu.
+L’option **Repères sur Dofus** affiche une fenêtre transparente au-dessus du jeu : un anneau jaune à contour noir et un nom en blanc pour chaque ressource mature dont l’action de récolte est disponible. Les mises à jour retirent immédiatement les repères devenus indisponibles. L’overlay laisse passer les clics, ne prend pas le focus et ne s’affiche que lorsque le processus Dofus suivi est au premier plan. Arrêter ou suspendre l’écoute efface les repères ; décocher l’option les masque sans arrêter l’écoute. L’overlay lui-même n’envoie aucune action au jeu ; le premier clic automatique est une option séparée.
 
 **Réglage clavier plein écran, mémorisé entre les lancements :**
 1. Mettre Dofus en plein écran ; démarrer l’écoute et changer de carte pour recevoir les ressources.

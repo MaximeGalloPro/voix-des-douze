@@ -19,6 +19,7 @@ from .settings import Store, model_directory
 from .engines import ENGINES, ManagedSpeechEngine, available_voices
 from .alerts import ResourceAlert
 from .overlay import AdjustmentOverlay, ResourceOverlay, screen_key
+from .resource_click import FirstResourceClick
 
 
 class Events(QObject):
@@ -58,6 +59,7 @@ class MainWindow(QMainWindow):
         self.resource_alert = ResourceAlert(self, self.show_error)
         self.overlay = ResourceOverlay()
         self.adjustment = None
+        self.resource_click = FirstResourceClick(self)
         self.shutting_down = False
         self.build_ui()
         self.events.ready.connect(self.engine_ready)
@@ -90,7 +92,7 @@ class MainWindow(QMainWindow):
         title = QLabel("VOIX DES DOUZE")
         title.setStyleSheet("font-size:26px;font-weight:700;color:#edce88;padding:8px 0")
         layout.addWidget(title)
-        layout.addWidget(QLabel("Dialogues locaux · Piper / Sopro / Pocket · aucune action envoyée au jeu"))
+        layout.addWidget(QLabel("Dialogues locaux · Piper / Sopro / Pocket · premier clic de récolte optionnel"))
         source = QGroupBox("Client Dofus à suivre")
         rows = QVBoxLayout(source)
         row = QHBoxLayout()
@@ -144,6 +146,12 @@ class MainWindow(QMainWindow):
         self.overlay_status.setWordWrap(True)
         overlay_controls.addWidget(self.overlay_status, 1)
         resource_layout.addLayout(overlay_controls)
+        self.first_resource = QCheckBox("Premier clic automatique à l’arrivée")
+        self.first_resource.setToolTip(
+            "Un clic sur une ressource récoltable aléatoire, uniquement si Dofus est au premier plan. "
+            "Plein écran, repères réglés et autorisation Accessibilité requis. Aucun pilotage du trajet.")
+        self.first_resource.toggled.connect(self.toggle_first_resource)
+        resource_layout.addWidget(self.first_resource)
         layout.addWidget(resource_box)
         self.npc = QLabel("PNJ : —")
         self.npc.setStyleSheet("font-size:20px;font-weight:600;color:#edce88;padding-top:8px")
@@ -215,13 +223,14 @@ class MainWindow(QMainWindow):
         return button
 
     def apply_settings(self):
-        controls = [self.automatic, self.resource_sound, self.volume, self.speed, self.default_combo]
+        controls = [self.automatic, self.resource_sound, self.first_resource, self.volume, self.speed, self.default_combo]
         for control in controls:
             control.blockSignals(True)
         settings = self.store.settings
         self.automatic.setChecked(settings.automatic)
         self.resource_sound.setChecked(settings.resource_sound)
         self.resource_sound_test.setEnabled(settings.resource_sound)
+        self.first_resource.setChecked(settings.first_resource_click)
         self.volume.setValue(round(settings.volume * 100))
         self.speed.setValue(settings.speed)
         index = self.default_combo.findData(self.store.default_for(self.engine_id))
@@ -472,6 +481,19 @@ class MainWindow(QMainWindow):
         self.resource_summary.setText(message)
         self.resource_table.setRowCount(0)
         self.overlay.set_resources(())
+        self.resource_click.clear()
+
+    def toggle_first_resource(self, enabled):
+        self.resource_click.timer.stop()
+        self.store.settings.first_resource_click = enabled
+        try:
+            self.store.save()
+        except OSError as exc:
+            self.show_error(f"Enregistrement impossible : {exc}")
+        if enabled:
+            self.status.setText(
+                "Premier clic activé : Dofus plein écran au premier plan, repères réglés et "
+                "autorisation macOS Accessibilité requis. Aucun arrêt du trajet garanti.")
 
     def toggle_resource_sound(self, enabled):
         self.store.settings.resource_sound = enabled
@@ -489,6 +511,7 @@ class MainWindow(QMainWindow):
 
     def show_resources(self, snapshot):
         self.overlay.set_resources(snapshot.resources)
+        self.resource_click.update(snapshot)
         mature = snapshot.mature_count
         immature = sum(resource.state == 1 for resource in snapshot.resources)
         harvesting = sum(resource.state == 2 for resource in snapshot.resources)
