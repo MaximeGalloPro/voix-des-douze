@@ -533,8 +533,6 @@ class MainWindow(QMainWindow):
             lambda result: self.finish_overlay_adjustment(screen, result))
         self.hide()
         self.adjustment.show()
-        self.adjustment.raise_()
-        self.adjustment.activateWindow()
         self.adjustment.setFocus()
 
     def finish_overlay_adjustment(self, screen, result):

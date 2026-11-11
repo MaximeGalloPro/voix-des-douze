@@ -44,11 +44,10 @@ def fullscreen_spaces(widget):
     window = message(int(widget.winId()), selector(b"window"))
     get = C.CFUNCTYPE(C.c_ulong, C.c_void_p, C.c_void_p)(("objc_msgSend", objc))
     set_behavior = C.CFUNCTYPE(None, C.c_void_p, C.c_void_p, C.c_ulong)(("objc_msgSend", objc))
-    if widget.testAttribute(Qt.WA_ShowWithoutActivating):
-        # Fullscreen admission requires a nonactivating NSPanel, not merely
-        # Qt's refusal to accept focus. Keep the keyboard adjustment activating.
-        set_behavior(window, selector(b"setStyleMask:"),
-                     get(window, selector(b"styleMask")) | (1 << 7))
+    # Both overlays must join another application's fullscreen Space without
+    # activating our application. The adjustment panel can still become key.
+    set_behavior(window, selector(b"setStyleMask:"),
+                 get(window, selector(b"styleMask")) | (1 << 7))
     # macOS 13+: joining Spaces alone does not admit an overlay to another
     # application's fullscreen Space. Primary/Auxiliary are mutually exclusive
     # with CanJoinAllApplications (AppKit NSWindowCollectionBehavior).
@@ -166,15 +165,27 @@ class AdjustmentOverlay(QWidget):
     def __init__(self, screen, resources, adjustment):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
         self.setGeometry(screen.geometry())
         self.adjustment = list(adjustment)
         self.resources = tuple(r for r in resources if 0 <= r.cell < 560)
         self.completed = False
         self.setFocusPolicy(Qt.StrongFocus)
 
-    def showEvent(self, event):
+    def show(self):
+        super().show()
+        # Qt rewrites native properties during show; apply them afterwards.
         fullscreen_spaces(self)
-        super().showEvent(event)
+        if sys.platform == "darwin" and QGuiApplication.platformName() == "cocoa":
+            objc = C.CDLL("/usr/lib/libobjc.A.dylib")
+            selector = objc.sel_registerName
+            selector.argtypes = [C.c_char_p]
+            selector.restype = C.c_void_p
+            message = C.CFUNCTYPE(C.c_void_p, C.c_void_p, C.c_void_p)(("objc_msgSend", objc))
+            window = message(int(self.winId()), selector(b"window"))
+            send = C.CFUNCTYPE(None, C.c_void_p, C.c_void_p)(("objc_msgSend", objc))
+            send(window, selector(b"makeKeyWindow"))
 
     def paintEvent(self, event):
         painter = QPainter(self)
