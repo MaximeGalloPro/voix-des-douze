@@ -152,6 +152,7 @@ class MainWindow(QMainWindow):
         overlay_controls = QHBoxLayout()
         self.overlay_enabled = QCheckBox("Repères sur Dofus")
         self.overlay_enabled.toggled.connect(self.toggle_overlay)
+        self.overlay_enabled.setChecked(True)
         overlay_controls.addWidget(self.overlay_enabled)
         self.button(overlay_controls, "Régler les repères…", self.configure_overlay)
         self.overlay_status = QLabel("Plein écran · réglage avec flèches et + / −")
@@ -503,6 +504,8 @@ class MainWindow(QMainWindow):
             self.show_resources(value)
         elif kind == "map_transition":
             self.compass.transition(value)
+        elif kind == "map_timing":
+            self.compass.timing(value)
         else:
             revision, payload = value
             self.listener.deliver(revision, lambda: self.show_network_dialogue(kind, payload))

@@ -196,3 +196,70 @@ def test_map_edge_requires_request_and_matching_server_confirmation():
     assert edges == [(3, 2)]
     tracker.handle("server", "jnj", num(10, 1))
     assert edges == [(3, 2)]
+
+
+def test_density_can_justify_detour_but_not_override_priority(memory):
+    m, _, _ = memory
+    m.observe(snapshot(3, resource(30), resource(31), resource(32)))
+    m.observe(snapshot(2, resource(20, 99)))
+    m.observe(snapshot(1))
+    m.observe_transition(1, 2)
+    m.observe_transition(2, 3)
+    assert m.recommend().map_id == 3  # 2/3 maps per resource beats 1/1.
+    assert m.recommend().resource_count == 3
+    m.set_preference(99, True, 9)
+    assert m.recommend().map_id == 2  # Priority still wins.
+    m.set_preference(99, True, 10)
+    m.observe(snapshot(3, resource(30), resource(31, state=1), resource(32, enabled=False)))
+    m.observe(snapshot(1))
+    assert m.recommend().map_id == 2  # Neither depleted nor unavailable boosts density.
+
+
+def test_calibrated_duration_is_saved_per_profile_and_exposed_in_route(memory):
+    m, _, catalog = memory
+    m.observe(snapshot(2, resource()))
+    m.observe(snapshot(1))
+    m.observe_transition(1, 2)
+    assert m.recommend().travel_seconds is None
+    m.save_travel_seconds(4.5)
+    assert m.recommend().travel_seconds == 4.5
+    path = m.db.execute("PRAGMA database_list").fetchone()[2]
+    reopened = GatheringMemory(path, catalog)
+    try:
+        reopened.select_profile(m.profile)
+        assert reopened.seconds_per_map == 4.5
+        reopened.select_profile("Autre personnage")
+        assert reopened.seconds_per_map is None
+    finally:
+        reopened.close()
+
+
+def test_non_mature_arrival_revokes_expired_forecast_without_changing_type_delay(memory):
+    m, now, _ = memory
+    m.observe(snapshot(2, resource()))
+    m.observe(snapshot(2, resource(state=1, enabled=False)))
+    m.observe(snapshot(1))
+    m.observe_transition(1, 2)
+    now[0] += 601
+    assert m.recommend().map_id == 2
+    assert m.recommend().wait == 0
+    # Server truth supersedes the expired forecast, without blaming the estimate.
+    m.observe(snapshot(2, resource(state=1, enabled=False)))
+    m.observe(snapshot(1))
+    assert m.recommend() is None
+    assert m.estimate(38)[0] == 600
+    # A later mature observation makes this map a candidate again.
+    m.observe(snapshot(2, resource()))
+    m.observe(snapshot(1))
+    assert m.recommend().map_id == 2
+
+
+def test_invalidated_forecast_does_not_lose_continuous_respawn_measurement(memory):
+    m, now, _ = memory
+    m.observe(snapshot(2, resource()))
+    m.observe(snapshot(2, resource(state=1)))
+    now[0] += 601
+    m.observe(snapshot(2, resource(state=1)))
+    now[0] += 49
+    m.observe(snapshot(2, resource()))
+    assert m.estimate(38)[0] == 650

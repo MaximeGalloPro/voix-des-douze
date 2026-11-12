@@ -157,7 +157,8 @@ class NetworkSession:
             interface = interface_for(selected.remote_ip)
             state = Conversation(catalog, self._conversation)
             harvest = HarvestTracker(self._resources)
-            transitions = MapTransitions(lambda pair: self.emit("map_transition", pair))
+            transitions = MapTransitions(lambda pair: self.emit("map_transition", pair),
+                                         lambda event: self.emit("map_timing", event))
 
             def handle(direction, key, raw):
                 transitions.handle(direction, key, raw)

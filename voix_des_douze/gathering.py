@@ -15,20 +15,28 @@ from .network_protocol import VERSION, fields, integer
 
 class MapTransitions:
     """Only learn requested transitions confirmed by the server's next full map."""
-    def __init__(self, emit):
+    def __init__(self, emit, arrival=lambda event: None, clock=time.monotonic):
         self.emit = emit
+        self.arrival = arrival
+        self.clock = clock
+        self.requested_at = None
         self.current = None
         self.requested = None
 
     def handle(self, direction, key, raw):
         if direction == "client" and key == "joc":
             self.requested = integer(fields(raw), 2)
+            self.requested_at = self.clock()
         elif direction == "server" and key == "jnj":
             target = integer(fields(raw), 10)
             if self.current is not None and target != self.current and target == self.requested:
                 self.emit((self.current, target))
+            self.arrival({"origin": self.current, "target": target,
+                          "requested": self.requested, "requested_at": self.requested_at,
+                          "arrived_at": self.clock()})
             self.current = target
             self.requested = None
+            self.requested_at = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +52,8 @@ class Destination:
     wait: float
     certainty: str
     source: str
+    resource_count: int
+    travel_seconds: float | None
 
     @property
     def command(self):
@@ -79,6 +89,8 @@ class GatheringMemory:
                 PRIMARY KEY(profile,type_id));
             CREATE TABLE IF NOT EXISTS harvests (
                 profile TEXT, map_id INTEGER, element_id INTEGER, type_id INTEGER, observed REAL);
+            CREATE TABLE IF NOT EXISTS travel (
+                profile TEXT PRIMARY KEY, seconds REAL NOT NULL);
         """)
         self.profile = ""
         self.current = None
@@ -87,16 +99,24 @@ class GatheringMemory:
         self.revision = 0
         self._destinations = ()
         self._built_revision = -1
+        self.seconds_per_map = None
 
     def profiles(self):
         rows = self.db.execute("""SELECT profile FROM resources UNION SELECT profile FROM edges
             UNION SELECT profile FROM samples UNION SELECT profile FROM preferences
-            UNION SELECT profile FROM harvests ORDER BY profile""")
+            UNION SELECT profile FROM harvests UNION SELECT profile FROM travel ORDER BY profile""")
         return [row[0] for row in rows if row[0]]
 
     def select_profile(self, profile):
         self.profile = profile.strip()
         self.reset_session()
+        row = self.db.execute("SELECT seconds FROM travel WHERE profile=?", (self.profile,)).fetchone()
+        self.seconds_per_map = row[0] if row else None
+
+    def save_travel_seconds(self, seconds):
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO travel VALUES (?,?)", (self.profile, seconds))
+        self.seconds_per_map = seconds
 
     def reset_session(self):
         self.current = None
@@ -123,6 +143,7 @@ class GatheringMemory:
             self.previous = None
             self.cuts.clear()
         previous = {r.element_id: r for r in self.previous.resources} if self.previous else {}
+        estimates = {}
         with self.db:
             for r in snapshot.resources:
                 old = previous.get(r.element_id)
@@ -140,6 +161,14 @@ class GatheringMemory:
                     if old is not None and old.state == 1 and started is not None and now > started:
                         self.db.execute("INSERT INTO samples VALUES (?,?,?,?)", (self.profile, r.type_id, now-started, now))
                     cut = None
+                if r.state == 1 and cut is not None:
+                    if r.type_id not in estimates:
+                        estimates[r.type_id] = self.estimate(r.type_id)[0]
+                    seconds = estimates[r.type_id]
+                    # A fresh non-mature observation supersedes an expired forecast,
+                    # but says nothing about who harvested or the type's true delay.
+                    if seconds is not None and cut + seconds <= now:
+                        cut = None
                 self.db.execute("INSERT OR REPLACE INTO resources VALUES (?,?,?,?,?,?,?,?,?)",
                                 (self.profile, snapshot.map_id, r.element_id, r.type_id, r.name, r.state,
                                  int(eligible), now, cut))
@@ -231,17 +260,26 @@ class GatheringMemory:
         if self._built_revision != self.revision:
             self._build_candidates()
         now = self.clock()
+        counts = {}
+        for resource, _, _, _, due, _ in self._destinations:
+            if due <= now:
+                key = (resource["map_id"], resource["priority"])
+                counts[key] = counts.get(key, 0) + 1
         def order(item):
             r, _, steps, _, due, _ = item
             if due <= now:
-                return (0, r["priority"], steps, r["map_id"], r["element_id"])
+                count = counts[(r["map_id"], r["priority"])]
+                cost = steps * (self.seconds_per_map if self.seconds_per_map is not None else 1) / count
+                return (0, r["priority"], cost, steps, r["map_id"], r["element_id"])
             return (1, due, r["priority"], steps, r["map_id"], r["element_id"])
         if not self._destinations:
             return None
         r, p, steps, direction, due, source = min(self._destinations, key=order)
         certainty = "Vue disponible · à vérifier" if r["state"] == 0 else "Repousse estimée · non confirmée"
         return Destination(r["map_id"], r["element_id"], r["name"], p["x"], p["y"], p["world_id"],
-                           steps, direction, max(0, due-now), certainty, source)
+                           steps, direction, max(0, due-now), certainty, source,
+                           counts.get((r["map_id"], r["priority"]), 0),
+                           steps*self.seconds_per_map if self.seconds_per_map is not None else None)
 
     def close(self):
         self.db.close()

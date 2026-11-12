@@ -1,6 +1,7 @@
 """Accessible, non-activating harvest compass; clipboard only, no game input."""
 from __future__ import annotations
 
+import sqlite3
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout,
@@ -10,6 +11,8 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout,
 from .gathering import GatheringMemory, countdown
 from .network_protocol import VERSION
 from .overlay import fullscreen_spaces
+from .compass_debug import CompassJournal
+from .travel import TravelCalibration
 
 
 class DirectionArrow(QWidget):
@@ -104,17 +107,20 @@ class CompassPanel(QWidget):
         self.resource.setWordWrap(True)
         self.resource.setTextFormat(Qt.PlainText)
         self.resource.setAlignment(Qt.AlignCenter)
+        self.resource.setFixedWidth(self.arrow.width())
         self.wait = QLabel()
         self.wait.setTextFormat(Qt.PlainText)
         self.wait.setAlignment(Qt.AlignCenter)
+        self.wait.setFixedWidth(self.arrow.width())
         self.wait.setStyleSheet("color:#edce88")
         self.copy = QPushButton("—")
         self.copy.setFocusPolicy(Qt.NoFocus)
+        self.copy.setFixedWidth(self.arrow.width())
         self.copy.setToolTip("Copier /travel : position géographique seulement, sans lancer de voyage ; accès aux intérieurs et instances non garanti.")
         self.copy.clicked.connect(owner.copy_destination)
-        layout.addWidget(self.resource)
-        layout.addWidget(self.wait)
-        layout.addWidget(self.copy)
+        layout.addWidget(self.resource, 0, Qt.AlignLeft)
+        layout.addWidget(self.wait, 0, Qt.AlignLeft)
+        layout.addWidget(self.copy, 0, Qt.AlignLeft)
         self.hover_timer = QTimer(self)
         self.hover_timer.setInterval(80)
         self.hover_timer.timeout.connect(self.refresh_hover)
@@ -177,6 +183,9 @@ class Compass:
         self.memory.select_profile(window.store.settings.compass_profile)
         self.panel = CompassPanel(self)
         self.destination = None
+        self.journal = CompassJournal(window.store.path.parent / "debug", window.show_error)
+        self.calibration = TravelCalibration()
+        self.calibration_view = None
         self.timer = QTimer(window)
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.refresh)
@@ -184,6 +193,7 @@ class Compass:
 
     def observe(self, snapshot):
         if self.window.store.settings.compass_enabled:
+            self.journal.arrival(self.memory.profile, snapshot, self.memory.clock())
             self.memory.observe(snapshot)
             self.refresh()
 
@@ -191,8 +201,41 @@ class Compass:
         if self.window.store.settings.compass_enabled:
             self.memory.observe_transition(*pair)
 
+    def timing(self, event):
+        if not self.window.store.settings.compass_enabled or not self.window.accepting:
+            return
+        self.journal.sync_profile(self.memory.profile)
+        if event["origin"] != event["target"]:
+            requested = event["requested_at"]
+            self.journal.record("changement de carte", self.memory.clock(), **event,
+                                délai_demande_arrivée_s=event["arrived_at"]-requested
+                                if requested is not None and event["requested"] == event["target"] else None)
+        sample = self.calibration.observe(event, self.memory.catalog["maps"])
+        if sample is not None:
+            self.journal.record("échantillon de trajet", self.memory.clock(),
+                                secondes=sample, nombre=len(self.calibration.samples))
+        if len(self.calibration.samples) == 40 and self.calibration.active:
+            try:
+                self.finish_calibration()
+            except sqlite3.Error as exc:
+                self.window.show_error(f"Calibration non enregistrée : {exc}")
+        self.refresh()
+
+    def finish_calibration(self):
+        seconds = self.calibration.finish()
+        self.memory.save_travel_seconds(seconds)
+        self.journal.record("calibration terminée", self.memory.clock(),
+                            secondes_par_carte=seconds, mesures=self.calibration.samples)
+
+    def cancel_calibration(self):
+        if self.calibration.active:
+            self.journal.record("calibration annulée", self.memory.clock())
+        self.calibration.cancel()
+
     def clear(self):
+        self.cancel_calibration()
         self.memory.reset_session()
+        self.journal.reset(self.memory.profile)
         self.destination = None
         self.refresh()
 
@@ -200,8 +243,17 @@ class Compass:
         w, panel = self.window, self.panel
         settings = w.store.settings
         enabled = settings.compass_enabled
+        if self.calibration.active and (not enabled or not w.accepting
+                                        or self.calibration.profile != self.memory.profile):
+            self.cancel_calibration()
+        if self.calibration_view is not None:
+            self.calibration_view.update_calibration()
         self.destination = self.memory.recommend() if enabled and w.accepting else None
         d = self.destination
+        if enabled and w.accepting:
+            self.journal.prediction(self.memory, d)
+        else:
+            self.journal.reset(self.memory.profile)
         if not settings.compass_profile.strip():
             text = "Choisissez votre profil serveur / personnage dans l’onglet Boussole."
         elif not w.accepting:
@@ -210,7 +262,9 @@ class Compass:
             text = "Aucune destination recommandable.\nExplorez des passages, observez les ressources et leurs repousses. Un trajet ou un délai inconnu n’est pas inventé."
         else:
             text = (f"{d.direction} · [{d.x}, {d.y}] · monde {d.world_id}\n"
-                    f"{d.steps} carte(s) par passages appris\n{d.certainty}")
+                    f"{d.steps} carte(s) par passages appris · {d.resource_count} ressource(s) de même priorité disponibles\n"
+                    + (f"Trajet estimé : {d.travel_seconds:.1f} s\n" if d.travel_seconds is not None else "Durée du trajet non calibrée\n")
+                    + d.certainty)
         panel.arrow.set_direction(d.direction if d else "")
         panel.setAccessibleDescription(text)
         panel.arrow.setToolTip(text + (f"\n{d.source}" if d else ""))
@@ -252,6 +306,8 @@ class Compass:
 
     def close(self):
         self.timer.stop()
+        self.cancel_calibration()
+        self.journal.close()
         self.panel.close()
         self.memory.close()
 
@@ -264,7 +320,14 @@ class CompassSettings(QWidget):
         self.enabled = QCheckBox("Afficher la boussole et mémoriser les observations")
         self.enabled.setChecked(compass.window.store.settings.compass_enabled)
         self.enabled.toggled.connect(self.toggle)
-        layout.addWidget(self.enabled)
+        heading = QHBoxLayout()
+        heading.addWidget(self.enabled)
+        heading.addStretch()
+        self.help = QPushButton("(?)")
+        self.help.setFixedWidth(38)
+        self.help.setAccessibleName("Aide boussole et calibration")
+        heading.addWidget(self.help)
+        layout.addLayout(heading)
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         settings = compass.window.store.settings
@@ -286,12 +349,28 @@ class CompassSettings(QWidget):
         use = QPushButton("Utiliser ce profil")
         use.clicked.connect(self.use_profile)
         layout.addWidget(use)
-        info = QLabel("Choisissez le bon profil à chaque changement de serveur ou personnage : les cartes seules n’identifient pas le serveur.\n"
-                      "Disponible d’abord ; parmi les disponibles : priorité (10 par défaut, 1 = plus haute), puis distance. Sinon : repousse la plus tôt, puis priorité et distance.\n"
-                      "Seuls les passages parcourus et confirmés sont appris, dans leur sens de parcours. Les repousses hors carte restent estimées.\n"
-                      "La boussole reste présente au-dessus de Dofus, même sans cible, mais se masque dans les autres applications.")
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        help_text = ("Choisissez le bon profil à chaque changement de serveur ou personnage.\n"
+                     "Disponible d’abord, puis priorité (10 par défaut, 1 = plus haute), puis trajet / quantité disponible de même priorité.\n"
+                     "Sans ressource prête : prochaine échéance, priorité, distance. Les repousses hors carte restent estimées.\n"
+                     "Seuls les passages parcourus et confirmés sont appris, dans leur sens de parcours.\n"
+                     "Les types de ressources apparaissent après observation. Sans durée connue, aucun délai n’est inventé.")
+        self.calibration_status = QLabel()
+        self.calibration_status.setWordWrap(True)
+        layout.addWidget(self.calibration_status)
+        self.help.setToolTip(help_text + "\n\nCalibration : premier passage d’amorçage, puis 20 à 40 passages sans récolter ni s’arrêter.\n"
+                             "Pause avant tout arrêt ; Reprendre amorce une nouvelle séquence sans compter l’immobilité.\n"
+                             "Terminer enregistre la médiane à partir de 20 mesures ; à 40, enregistrement automatique.\n"
+                             "Hors calibration, aucune durée passée sur une carte ne modifie la mesure.")
+        calibration_controls = QHBoxLayout()
+        self.calibrate = QPushButton("Démarrer la calibration")
+        self.calibrate.clicked.connect(self.toggle_calibration)
+        self.pause_calibration = QPushButton("Pause")
+        self.pause_calibration.clicked.connect(self.toggle_calibration_pause)
+        self.cancel_calibration = QPushButton("Annuler la calibration")
+        self.cancel_calibration.clicked.connect(self.abort_calibration)
+        for button in (self.calibrate, self.pause_calibration, self.cancel_calibration):
+            calibration_controls.addWidget(button)
+        layout.addLayout(calibration_controls)
         self.table = QTableWidget(0, 5)
         self.table.setAccessibleName("Types de ressources observés et priorités de suivi")
         self.table.setHorizontalHeaderLabels(["Suivre", "Priorité", "Ressource", "Repousse estimée", "Origine de l’estimation"])
@@ -310,6 +389,48 @@ class CompassSettings(QWidget):
             buttons.addWidget(button)
         layout.addLayout(buttons)
         self.load_types()
+        compass.calibration_view = self
+        self.update_calibration()
+
+    def update_calibration(self):
+        c = self.compass.calibration
+        seconds = self.compass.memory.seconds_per_map
+        baseline = f"{seconds:.1f} s / carte enregistrées." if seconds is not None else "Durée par carte non calibrée."
+        self.calibration_status.setText(
+            f"{baseline} Calibration {'en pause' if c.paused else 'en cours'} : {len(c.samples)} / 40 passages (20 minimum)."
+            if c.active else baseline)
+        self.calibrate.setText("Terminer la calibration" if c.active else "Démarrer la calibration")
+        self.pause_calibration.setText("Reprendre" if c.paused else "Pause")
+        self.pause_calibration.setEnabled(c.active)
+        self.cancel_calibration.setEnabled(c.active)
+
+    def toggle_calibration(self):
+        compass = self.compass
+        try:
+            if compass.calibration.active:
+                compass.finish_calibration()
+            elif (compass.window.accepting and compass.window.store.settings.compass_enabled
+                  and compass.memory.profile):
+                compass.calibration.start(compass.memory.profile)
+                compass.journal.sync_profile(compass.memory.profile)
+                compass.journal.record("calibration démarrée", compass.memory.clock())
+            else:
+                self.notice.setText("Activez la boussole, choisissez un profil et démarrez l’écoute avant la calibration.")
+                return
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            self.notice.setText(str(exc))
+        self.update_calibration()
+        compass.refresh()
+
+    def toggle_calibration_pause(self):
+        self.compass.calibration.pause()
+        self.compass.journal.record("calibration pause/reprise", self.compass.memory.clock(),
+                                   pause=self.compass.calibration.paused)
+        self.update_calibration()
+
+    def abort_calibration(self):
+        self.compass.cancel_calibration()
+        self.update_calibration()
 
     def save_settings(self):
         try:
@@ -332,6 +453,7 @@ class CompassSettings(QWidget):
             return
         settings = self.compass.window.store.settings
         if profile != settings.compass_profile:
+            self.compass.cancel_calibration()
             settings.compass_profile = profile
             self.compass.memory.select_profile(profile)
         if profile not in settings.compass_profiles:
@@ -361,7 +483,7 @@ class CompassSettings(QWidget):
                 self.table.setItem(index, column, QTableWidgetItem(text))
             self.controls.append((row["type_id"], check, priority))
         self.table.resizeColumnsToContents()
-        self.notice.setText("Les types apparaissent ici à mesure des visites. Sans durée sourcée ni repousse mesurée, aucun compte à rebours n’est inventé.")
+        self.notice.clear()
 
     def save_priorities(self):
         for type_id, check, priority in self.controls:
