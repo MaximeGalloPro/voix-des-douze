@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
-from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout,
     QHBoxLayout, QLabel, QPushButton, QSpinBox, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget)
@@ -115,6 +115,24 @@ class CompassPanel(QWidget):
         layout.addWidget(self.resource)
         layout.addWidget(self.wait)
         layout.addWidget(self.copy)
+        self.hover_timer = QTimer(self)
+        self.hover_timer.setInterval(80)
+        self.hover_timer.timeout.connect(self.refresh_hover)
+
+    def refresh_hover(self):
+        # Cocoa may pass transparent pixels through without enter/leave events.
+        hovered = self.rect().contains(self.mapFromGlobal(QCursor.pos()))
+        self.move_handle.setVisible(self.isVisible() and (hovered or self.drag_offset is not None))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.hover_timer.start()
+        self.refresh_hover()
+
+    def hideEvent(self, event):
+        self.hover_timer.stop()
+        self.move_handle.hide()
+        super().hideEvent(event)
 
     def enterEvent(self, event):
         self.move_handle.show()
@@ -141,7 +159,7 @@ class CompassPanel(QWidget):
             if event.type() == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton and self.drag_offset is not None:
                 self.move(self.bounded_position(event.globalPosition().toPoint() - self.drag_offset))
                 self.drag_offset = None
-                self.move_handle.setVisible(self.underMouse())
+                self.refresh_hover()
                 relative = self.pos() - self.placement_geometry.topLeft()
                 self.owner.window.store.settings.compass_positions[self.placement_key] = [relative.x(), relative.y()]
                 try:

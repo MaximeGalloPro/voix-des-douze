@@ -81,6 +81,34 @@ def test_hover_reveals_handle_but_arrow_cannot_move_panel(make_compass):
     assert not panel.move_handle.isVisible()
 
 
+def test_hover_without_native_enter_events_and_after_hiding(make_compass, monkeypatch):
+    from PySide6.QtGui import QCursor
+    _, compass = make_compass()
+    cursor = QPoint(-10000, -10000)
+    monkeypatch.setattr(QCursor, "pos", lambda: cursor)
+    compass.refresh()
+    panel = compass.panel
+    assert not panel.move_handle.isVisible()
+    # No enter event: macOS can pass fully transparent pixels through.
+    cursor = panel.mapToGlobal(QPoint(panel.width() - 2, 2))
+    QTest.qWait(180)
+    assert panel.move_handle.isVisible()
+    cursor = QPoint(-10000, -10000)
+    QTest.qWait(180)
+    assert not panel.move_handle.isVisible()
+    panel.drag_offset = QPoint(1, 1)
+    QTest.qWait(180)
+    assert panel.move_handle.isVisible()
+    panel.hide()
+    assert not panel.hover_timer.isActive()
+    assert not panel.move_handle.isVisible()
+    panel.drag_offset = None
+    cursor = panel.mapToGlobal(QPoint(panel.width() - 2, 2))
+    compass.refresh()
+    QTest.qWait(180)
+    assert panel.move_handle.isVisible()
+
+
 def test_profiles_without_observations_survive_restart_and_dropdown_selection(make_compass):
     window, compass = make_compass()
     window.store.settings.compass_profile = "Ancien serveur · personnage"
