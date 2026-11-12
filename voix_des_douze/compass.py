@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
 from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPolygonF
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFormLayout,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout,
     QHBoxLayout, QLabel, QPushButton, QSpinBox, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -115,7 +115,6 @@ class Compass:
         self.memory.select_profile(window.store.settings.compass_profile)
         self.panel = CompassPanel(self)
         self.destination = None
-        self.dialog = None
         self.timer = QTimer(window)
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.refresh)
@@ -142,7 +141,7 @@ class Compass:
         self.destination = self.memory.recommend() if enabled and w.accepting else None
         d = self.destination
         if not settings.compass_profile.strip():
-            text = "Choisissez votre profil serveur / personnage dans Boussole et priorités."
+            text = "Choisissez votre profil serveur / personnage dans l’onglet Boussole."
         elif not w.accepting:
             text = "Écoute arrêtée · mémoire conservée\nLes positions et repousses ne sont plus observées."
         elif d is None:
@@ -181,32 +180,17 @@ class Compass:
             self.panel.copy.setText("Position copiée")
             QTimer.singleShot(1500, lambda: self.panel.copy.setText("Copier /travel (position)"))
 
-    def show_settings(self):
-        if self.dialog is None:
-            self.dialog = CompassSettings(self)
-            self.dialog.finished.connect(self._dialog_closed)
-        self.dialog.show()
-        self.dialog.raise_()
-        self.dialog.activateWindow()
-
-    def _dialog_closed(self):
-        self.dialog.deleteLater()
-        self.dialog = None
 
     def close(self):
         self.timer.stop()
-        if self.dialog is not None:
-            self.dialog.close()
         self.panel.close()
         self.memory.close()
 
 
-class CompassSettings(QDialog):
+class CompassSettings(QWidget):
     def __init__(self, compass):
         super().__init__(compass.window)
         self.compass = compass
-        self.setWindowTitle("Boussole · profils, suivi et priorités")
-        self.resize(820, 580)
         layout = QVBoxLayout(self)
         self.enabled = QCheckBox("Afficher la boussole et mémoriser les observations")
         self.enabled.setChecked(compass.window.store.settings.compass_enabled)
@@ -253,9 +237,7 @@ class CompassSettings(QDialog):
         reload.clicked.connect(self.load_types)
         save = QPushButton("Enregistrer les priorités")
         save.clicked.connect(self.save_priorities)
-        close = QPushButton("Fermer")
-        close.clicked.connect(self.accept)
-        for button in (reload, save, close):
+        for button in (reload, save):
             buttons.addWidget(button)
         layout.addLayout(buttons)
         self.load_types()

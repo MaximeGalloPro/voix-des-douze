@@ -7,7 +7,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 from shiboken6 import delete
 
-from voix_des_douze.compass import Compass
+from voix_des_douze.compass import Compass, CompassSettings
 from voix_des_douze.settings import Store
 
 
@@ -67,13 +67,11 @@ def test_profiles_without_observations_survive_restart_and_dropdown_selection(ma
     window, compass = make_compass()
     window.store.settings.compass_profile = "Ancien serveur · personnage"
     compass.memory.select_profile(window.store.settings.compass_profile)
-    compass.show_settings()
-    dialog = compass.dialog
+    dialog = CompassSettings(compass)
     dialog.profile.setEditText("Nouveau serveur · personnage")
     dialog.use_profile()
     reopened_window, reopened = make_compass()
-    reopened.show_settings()
-    selector = reopened.dialog.profile
+    selector = CompassSettings(reopened).profile
     assert {selector.itemText(i) for i in range(selector.count())} == {
         "Ancien serveur · personnage", "Nouveau serveur · personnage"}
     assert selector.currentText() == "Nouveau serveur · personnage"
@@ -88,8 +86,7 @@ def test_legacy_profile_is_recovered_from_memory_without_settings_history(make_c
     compass.memory.select_profile("Ancien profil avec priorités")
     compass.memory.set_preference(38, True, 7)
     compass.memory.select_profile("")
-    compass.show_settings()
-    selector = compass.dialog.profile
+    selector = CompassSettings(compass).profile
     index = selector.findText("Ancien profil avec priorités")
     assert index >= 0
     selector.setCurrentIndex(index)

@@ -10,7 +10,7 @@ import threading
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QPushButton, QScrollArea, QSlider, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget)
+    QPushButton, QScrollArea, QSlider, QTableWidget, QTableWidgetItem, QTabWidget, QTextEdit, QVBoxLayout, QWidget)
 
 from .hotkeys import GlobalHotkeys, KEYS
 from .network import NetworkSession, clients
@@ -20,7 +20,7 @@ from .engines import ENGINES, ManagedSpeechEngine, available_voices
 from .alerts import ResourceAlert
 from .overlay import AdjustmentOverlay, ResourceOverlay, screen_key
 from .resource_click import FirstResourceClick
-from .compass import Compass
+from .compass import Compass, CompassSettings
 
 
 class Events(QObject):
@@ -64,6 +64,8 @@ class MainWindow(QMainWindow):
         self.shutting_down = False
         self.build_ui()
         self.compass = Compass(self)
+        self.compass_settings = CompassSettings(self.compass)
+        self.compass_layout.addWidget(self.compass_settings)
         self.events.ready.connect(self.engine_ready)
         self.events.engine_prepared.connect(self.engine_prepared)
         self.events.preparation_progress.connect(self.metrics_progress)
@@ -86,15 +88,12 @@ class MainWindow(QMainWindow):
     def build_ui(self):
         root = QWidget()
         root.setObjectName("main_content")
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(root)
-        self.setCentralWidget(scroll)
+        self.setCentralWidget(root)
         layout = QVBoxLayout(root)
         title = QLabel("VOIX DES DOUZE")
         title.setStyleSheet("font-size:26px;font-weight:700;color:#edce88;padding:8px 0")
         layout.addWidget(title)
-        layout.addWidget(QLabel("Dialogues locaux · Piper / Sopro / Pocket · premier clic de récolte optionnel"))
+        layout.addWidget(QLabel("Boussole de récolte · carte et repères · voix des PNJ"))
         source = QGroupBox("Client Dofus à suivre")
         rows = QVBoxLayout(source)
         row = QHBoxLayout()
@@ -110,14 +109,25 @@ class MainWindow(QMainWindow):
         self.pause_button = self.button(control, "Suspendre", self.toggle_pause)
         self.button(control, "Arrêter", self.stop)
         control.addStretch()
-        self.automatic = QCheckBox("Lecture automatique")
-        self.automatic.toggled.connect(self.save_controls)
-        control.addWidget(self.automatic)
         rows.addLayout(control)
         self.network_status = QLabel("Écoute arrêtée · autorisation macOS par session · aucun service permanent")
         self.network_status.setWordWrap(True)
         rows.addWidget(self.network_status)
         layout.addWidget(source)
+        self.tabs = QTabWidget()
+        self.tabs.setAccessibleName("Gestion de la boussole, de la carte et des voix")
+        layout.addWidget(self.tabs, 1)
+        page_layouts = []
+        for label in ("Boussole", "Carte", "Voix"):
+            page = QWidget()
+            page.setObjectName("main_content")
+            page_layout = QVBoxLayout(page)
+            page_layouts.append(page_layout)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(page)
+            self.tabs.addTab(scroll, label)
+        self.compass_layout, map_layout, voices_layout = page_layouts
         resource_box = QGroupBox("Ressources de la carte · debug réseau")
         resource_layout = QVBoxLayout(resource_box)
         self.resource_summary = QLabel("En attente de la première carte · aucun comptage disponible")
@@ -161,11 +171,17 @@ class MainWindow(QMainWindow):
         self.resource_click_debug_status.setWordWrap(True)
         self.resource_click_debug_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         resource_layout.addWidget(self.resource_click_debug_status)
-        self.button(resource_layout, "Boussole et priorités…", lambda: self.compass.show_settings())
-        layout.addWidget(resource_box)
+        map_layout.addWidget(resource_box)
+        map_layout.addStretch()
+        voice_controls = QHBoxLayout()
+        self.automatic = QCheckBox("Lecture automatique")
+        self.automatic.toggled.connect(self.save_controls)
+        voice_controls.addWidget(self.automatic)
+        voice_controls.addStretch()
+        voices_layout.addLayout(voice_controls)
         self.npc = QLabel("PNJ : —")
         self.npc.setStyleSheet("font-size:20px;font-weight:600;color:#edce88;padding-top:8px")
-        layout.addWidget(self.npc)
+        voices_layout.addWidget(self.npc)
         body = QHBoxLayout()
         self.text = QTextEdit()
         self.text.setReadOnly(True)
@@ -207,14 +223,14 @@ class MainWindow(QMainWindow):
         self.preview_button.clicked.connect(self.preview_voice)
         form.addRow(self.preview_button)
         body.addWidget(voice_box)
-        layout.addLayout(body, 1)
+        voices_layout.addLayout(body, 1)
         actions = QHBoxLayout()
         self.button(actions, "Lire / Relire", self.replay)
         self.button(actions, "Raccourcis globaux…", self.edit_shortcuts)
         actions.addStretch()
-        layout.addLayout(actions)
+        voices_layout.addLayout(actions)
         self.metrics = QLabel("Synthèse / audio : en attente")
-        layout.addWidget(self.metrics)
+        voices_layout.addWidget(self.metrics)
         self.status = QLabel("Choisissez un client et démarrez l’écoute. Après démarrage, changez de carte puis revenez pour synchroniser les PNJ.")
         self.status.setWordWrap(True)
         self.status.setStyleSheet("padding:12px;background:#233039;border-radius:6px")
@@ -224,7 +240,9 @@ class MainWindow(QMainWindow):
             "QPushButton {padding:8px 12px;border:1px solid #56636b;border-radius:5px;background:#2d4049;color:#f4f1e7} "
             "QPushButton:hover {background:#3b5763} QTextEdit,QComboBox,QDoubleSpinBox {background:#202e36;color:#f4f1e7;padding:5px;border:1px solid #40515b} "
             "QTableWidget {background:#202e36;color:#f4f1e7;gridline-color:#40515b;selection-background-color:#3b5763} "
-            "QHeaderView::section {background:#2d4049;color:#f4f1e7;padding:4px;border:1px solid #40515b}")
+            "QHeaderView::section {background:#2d4049;color:#f4f1e7;padding:4px;border:1px solid #40515b} "
+            "QTabWidget::pane {border:1px solid #40515b} QTabBar::tab {background:#2d4049;color:#f4f1e7;padding:12px 24px} "
+            "QTabBar::tab:selected {background:#40515b;color:#edce88;border-bottom:3px solid #edce88}")
 
     def button(self, layout, label, callback):
         button = QPushButton(label)

@@ -14,6 +14,8 @@ Prérequis : macOS 14+, **Python 3.13**, et Python système des Command Line Too
 4. **Changer de carte puis revenir** pour synchroniser les PNJ, puis ouvrir un dialogue. La première réplique et les suivantes sont affichées et lues automatiquement. Répondre invalide immédiatement l’ancienne lecture.
 5. **Arrêter** coupe la capture et la voix ; fermer l’application fait de même. Aucun service permanent ni démarrage automatique avec le Mac.
 
+La fenêtre principale comporte trois onglets, dans l’ordre : **Boussole** (profil, activation, suivi des ressources et priorités), **Carte** (ressources présentes, son, repères et assistance au clic) et **Voix** (dialogue PNJ, moteurs, voix, lecture automatique, volume et vitesse). Le bloc **Client Dofus à suivre**, les commandes **Démarrer l’écoute / Suspendre / Arrêter** et l’état de l’écoute restent visibles au-dessus des trois onglets. Les réglages de boussole sont intégrés à cette fenêtre, sans dialogue séparé.
+
 ```sh
 ./Installer.command
 .venv/bin/python scripts/prepare_network.py
@@ -57,7 +59,7 @@ Les métadonnées compactes sont livrées dans `models/harvest.json` : aucun té
 
 ### Boussole de récolte et mémoire des repousses
 
-Ouvrir **Boussole et priorités…**, choisir un profil dans la **liste déroulante**, ou saisir un nouveau **profil serveur / personnage** puis cliquer **Utiliser ce profil** (Entrée fonctionne aussi). Chaque profil validé est mémorisé, même sans observation ; sélectionner un profil existant le réactive immédiatement. Le profil actif et les profils déjà présents dans la base sont repris automatiquement dans la liste. Le profil est explicite : les identifiants de carte seuls ne permettent pas d’isoler les serveurs, et la disponibilité des actions dépend du personnage. Changer de profil en changeant de serveur/personnage. Le suivi est désactivé par défaut ; il n’ajoute aucun clic ni commande au jeu.
+Dans l’onglet **Boussole**, choisir un profil dans la **liste déroulante**, ou saisir un nouveau **profil serveur / personnage** puis cliquer **Utiliser ce profil** (Entrée fonctionne aussi). Chaque profil validé est mémorisé, même sans observation ; sélectionner un profil existant le réactive immédiatement. Le profil actif et les profils déjà présents dans la base sont repris automatiquement dans la liste. Le profil est explicite : les identifiants de carte seuls ne permettent pas d’isoler les serveurs, et la disponibilité des actions dépend du personnage. Changer de profil en changeant de serveur/personnage. Le suivi est désactivé par défaut ; il n’ajoute aucun clic ni commande au jeu.
 
 La petite boussole reste affichée au-dessus de Dofus au premier plan, même sans ressource candidate ; elle se masque dans les autres applications. Elle indique la ressource, les coordonnées et le monde, le nombre de cartes sur le chemin appris, la direction du **prochain passage** et l’attente estimée. **Copier /travel (position)** place uniquement `/travel x,y` dans le presse-papiers pour le monde principal (1), sans coller ni valider dans le jeu. Cette commande vise une position géographique : elle ne garantit pas l’accès à un intérieur ou une instance. Les coordonnées d’un autre monde restent affichées, sans commande ambiguë à copier.
 
