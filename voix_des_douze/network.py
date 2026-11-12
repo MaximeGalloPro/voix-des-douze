@@ -18,6 +18,7 @@ import time
 from .network_protocol import Catalog, Conversation, PacketReader, ProtocolError, VERSION
 from .native.network_capture import game_connections
 from .harvest import HarvestTracker
+from .gathering import MapTransitions
 
 
 @dataclass(frozen=True)
@@ -156,8 +157,10 @@ class NetworkSession:
             interface = interface_for(selected.remote_ip)
             state = Conversation(catalog, self._conversation)
             harvest = HarvestTracker(self._resources)
+            transitions = MapTransitions(lambda pair: self.emit("map_transition", pair))
 
             def handle(direction, key, raw):
+                transitions.handle(direction, key, raw)
                 state.handle(direction, key, raw)
                 harvest.handle(direction, key, raw)
 

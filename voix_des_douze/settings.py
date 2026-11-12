@@ -28,6 +28,8 @@ class Settings:
     automatic: bool = True
     resource_sound: bool = True
     first_resource_click: bool = False
+    compass_enabled: bool = False
+    compass_profile: str = ""
     volume: float = 0.8
     speed: float = 1.0
     default_voice: str = ""
@@ -67,6 +69,8 @@ class Store:
                     raise ValueError("Attributions des moteurs invalides")
                 if not isinstance(s.overlay_screen, str) or not isinstance(s.overlay_adjustments, dict):
                     raise ValueError("Réglage des repères invalide")
+                if not isinstance(s.compass_enabled, bool) or not isinstance(s.compass_profile, str):
+                    raise ValueError("Configuration de la boussole invalide")
                 for adjustment in s.overlay_adjustments.values():
                     if (not isinstance(adjustment, list) or len(adjustment) != 3
                             or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in adjustment)

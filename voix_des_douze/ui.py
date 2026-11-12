@@ -20,6 +20,7 @@ from .engines import ENGINES, ManagedSpeechEngine, available_voices
 from .alerts import ResourceAlert
 from .overlay import AdjustmentOverlay, ResourceOverlay, screen_key
 from .resource_click import FirstResourceClick
+from .compass import Compass
 
 
 class Events(QObject):
@@ -62,6 +63,7 @@ class MainWindow(QMainWindow):
         self.resource_click = FirstResourceClick(self)
         self.shutting_down = False
         self.build_ui()
+        self.compass = Compass(self)
         self.events.ready.connect(self.engine_ready)
         self.events.engine_prepared.connect(self.engine_prepared)
         self.events.preparation_progress.connect(self.metrics_progress)
@@ -159,6 +161,7 @@ class MainWindow(QMainWindow):
         self.resource_click_debug_status.setWordWrap(True)
         self.resource_click_debug_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         resource_layout.addWidget(self.resource_click_debug_status)
+        self.button(resource_layout, "Boussole et priorités…", lambda: self.compass.show_settings())
         layout.addWidget(resource_box)
         self.npc = QLabel("PNJ : —")
         self.npc.setStyleSheet("font-size:20px;font-weight:600;color:#edce88;padding-top:8px")
@@ -480,6 +483,8 @@ class MainWindow(QMainWindow):
             self.status.setText("Changez de carte puis revenez pour synchroniser les PNJ, puis ouvrez un dialogue.")
         elif kind == "resources":
             self.show_resources(value)
+        elif kind == "map_transition":
+            self.compass.transition(value)
         else:
             revision, payload = value
             self.listener.deliver(revision, lambda: self.show_network_dialogue(kind, payload))
@@ -489,6 +494,7 @@ class MainWindow(QMainWindow):
         self.resource_table.setRowCount(0)
         self.overlay.set_resources(())
         self.resource_click.clear()
+        self.compass.clear()
 
     def toggle_first_resource(self, enabled):
         self.resource_click.timer.stop()
@@ -517,6 +523,7 @@ class MainWindow(QMainWindow):
             self.resource_alert.play(self.volume.value() / 100)
 
     def show_resources(self, snapshot):
+        self.compass.observe(snapshot)
         self.overlay.set_resources(snapshot.resources)
         self.resource_click.update(snapshot)
         mature = snapshot.mature_count
@@ -753,6 +760,7 @@ class MainWindow(QMainWindow):
                 except ProcessLookupError:
                     pass
         self.stop()
+        self.compass.close()
         self.resource_click.record("fin", raison="fermeture")
         self.resource_click.stop_debug()
         self.hotkeys.close()

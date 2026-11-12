@@ -5,15 +5,21 @@ import time
 import pytest
 from PySide6.QtWidgets import QApplication, QWidget, QCheckBox, QLabel
 from PySide6.QtTest import QTest
+from shiboken6 import delete
 
 from voix_des_douze.harvest import Resource, ResourceSnapshot
 from voix_des_douze.overlay import ResourceOverlay, screen_key
 from voix_des_douze.resource_click import FirstResourceClick
 
 
-@pytest.fixture
-def assist():
+@pytest.fixture(scope="session")
+def click_app():
     app = QApplication.instance() or QApplication([])
+    yield app
+
+
+@pytest.fixture
+def assist(click_app):
     w = QWidget()
     w.first_resource = QCheckBox(w)
     w.first_resource.setChecked(True)
@@ -36,6 +42,9 @@ def assist():
     w.overlay.timer.stop()
     w.overlay.close()
     w.close()
+    # Close only hides Qt windows; destroy native objects before wrapper GC.
+    delete(w.overlay)
+    delete(w)
 
 
 def snapshot(map_id, state=0, enabled=True, cell=280):
