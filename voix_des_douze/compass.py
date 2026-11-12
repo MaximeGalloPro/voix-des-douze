@@ -5,7 +5,7 @@ import sqlite3
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout,
-    QHBoxLayout, QLabel, QPushButton, QSpinBox, QTableWidget,
+    QHBoxLayout, QLabel, QLayout, QPushButton, QSpinBox, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget)
 
 from .gathering import GatheringMemory, countdown
@@ -76,23 +76,20 @@ class CompassPanel(QWidget):
             QPushButton:hover { background:rgba(23,35,44,160); border-color:#edce88; }
             QPushButton:disabled { color:#a8b1b5; border-color:#52616b; }
         """)
-        self.setFixedWidth(210)
         layout = QVBoxLayout(self)
+        layout.setSizeConstraint(QLayout.SetFixedSize)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(2)
         self.drag_offset = None
         self.placement_geometry = None
         self.placement_key = None
-        self.move_handle = QPushButton("✥")
+        self.move_handle = QPushButton("✥", self)
         self.move_handle.setFixedSize(26, 26)
         self.move_handle.setFocusPolicy(Qt.NoFocus)
         self.move_handle.setAccessibleName("Déplacer la boussole")
         self.move_handle.setToolTip("Maintenir et glisser pour déplacer la boussole.")
         self.move_handle.setCursor(Qt.SizeAllCursor)
         self.move_handle.installEventFilter(self)
-        policy = self.move_handle.sizePolicy()
-        policy.setRetainSizeWhenHidden(True)
-        self.move_handle.setSizePolicy(policy)
         self.move_handle.hide()
         self.arrow = DirectionArrow()
         self.distance = QLabel("—")
@@ -100,9 +97,9 @@ class CompassPanel(QWidget):
         self.distance.setToolTip("Distance en cartes par les passages appris.")
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(2)
         header.addWidget(self.arrow)
         header.addWidget(self.distance)
-        header.addWidget(self.move_handle, 0, Qt.AlignTop)
         layout.addLayout(header)
         self.resource = QLabel()
         self.resource.setWordWrap(True)
@@ -122,6 +119,8 @@ class CompassPanel(QWidget):
         layout.addWidget(self.resource, 0, Qt.AlignLeft)
         layout.addWidget(self.wait, 0, Qt.AlignLeft)
         layout.addWidget(self.copy, 0, Qt.AlignLeft)
+        self.move_handle.move(4, 4)
+        self.move_handle.raise_()
         self.hover_timer = QTimer(self)
         self.hover_timer.setInterval(80)
         self.hover_timer.timeout.connect(self.refresh_hover)

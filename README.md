@@ -71,7 +71,9 @@ Le bouton, aligné sous le cadran et de même largeur (84 px), affiche uniquemen
 Le nom de la ressource et le compte à rebours sont centrés **sous le cadran**, dans la même largeur de 84 px, sans décalage lié au chiffre de distance ou à la poignée.
 
 
-Au survol, une petite **poignée de déplacement** apparaît : maintenir le bouton gauche sur cette icône et glisser pour déplacer l’overlay. Le cadran et les libellés ne permettent pas de déplacer la boussole. La position est enregistrée au relâchement, séparément pour chaque écran/résolution, et conservée pendant les rafraîchissements et après redémarrage. L’overlay reste dans les limites de l’écran pour ne pas devenir inaccessible. Le déplacement ne donne pas le focus clavier à la boussole. Une **flèche graphique** indique nord, est, sud ou ouest vers le prochain passage appris ; un tiret remplace la flèche sans direction connue.
+La largeur totale de l’overlay s’adapte au minimum nécessaire pour le cadran et le chiffre de distance : aucune colonne vide n’est réservée à la poignée. Elle peut s’élargir si la distance comporte davantage de chiffres.
+
+Au survol, une petite **poignée de déplacement en haut à gauche du cadran** apparaît : maintenir le bouton gauche sur cette icône et glisser pour déplacer l’overlay. Le cadran et les libellés ne permettent pas de déplacer la boussole. La position est enregistrée au relâchement, séparément pour chaque écran/résolution, et conservée pendant les rafraîchissements et après redémarrage. L’overlay reste dans les limites de l’écran pour ne pas devenir inaccessible. Le déplacement ne donne pas le focus clavier à la boussole. Une **flèche graphique** indique nord, est, sud ou ouest vers le prochain passage appris ; un tiret remplace la flèche sans direction connue.
 
 Sur macOS, le survol est également détecté par la position du pointeur, toutes les 80 ms pendant que la boussole est visible : il fonctionne même dans les zones entièrement transparentes, sans dépendre des événements d’entrée/sortie de fenêtre. Aucun clic ni événement clavier n’est capturé par ce contrôle.
 
