@@ -16,7 +16,7 @@ class DirectionArrow(QWidget):
     """Map axes: north is up; point to the next learned passage, not the final map."""
     def __init__(self):
         super().__init__()
-        self.setFixedSize(64, 64)
+        self.setFixedSize(84, 84)
         self.direction = ""
 
     def set_direction(self, direction):
@@ -29,17 +29,25 @@ class DirectionArrow(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#edce88"), 3))
-        painter.translate(32, 32)
+        painter.translate(42, 42)
+        painter.setBrush(QColor("#202e38"))
+        painter.setPen(QPen(QColor("#52616b"), 1))
+        painter.drawEllipse(QPointF(0, 0), 38, 38)
+        for angle in range(0, 360, 30):
+            painter.save()
+            painter.rotate(angle)
+            painter.setPen(QPen(QColor("#edce88" if angle % 90 == 0 else "#52616b"), 2))
+            painter.drawLine(0, -34, 0, -29 if angle % 90 == 0 else -32)
+            painter.restore()
+        painter.setPen(QPen(QColor("#edce88"), 2))
         angle = next((angle for name, angle in
                       (("Nord", 0), ("Est", 90), ("Sud", 180), ("Ouest", 270))
                       if self.direction.startswith(name)), None)
         if angle is not None:
             painter.rotate(angle)
             painter.setBrush(QColor("#edce88"))
-            painter.drawPolygon(QPolygonF([QPointF(0, -25), QPointF(21, 3),
-                                          QPointF(7, 3), QPointF(7, 24),
-                                          QPointF(-7, 24), QPointF(-7, 3), QPointF(-21, 3)]))
+            painter.drawPolygon(QPolygonF([QPointF(0, -24), QPointF(14, 14),
+                                          QPointF(0, 7), QPointF(-14, 14)]))
         elif self.direction == "Ici":
             painter.drawEllipse(QPointF(0, 0), 16, 16)
             painter.setBrush(QColor("#edce88"))
@@ -56,11 +64,33 @@ class CompassPanel(QWidget):
         self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
         self.setWindowTitle("Boussole de récolte")
         self.setAccessibleName("Boussole de récolte et temps de repousse")
-        self.setStyleSheet("QWidget {background:#172027;color:#ffffff;font-size:17px} QPushButton {padding:8px;border:2px solid #edce88;border-radius:5px}")
+        self.setObjectName("compass_panel")
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("""
+            QWidget { color:#f4f1e7; font-size:17px; background:transparent; }
+            QWidget#compass_surface {
+                background:#17232c; border:1px solid #7f7457; border-radius:16px;
+            }
+            QPushButton {
+                background:#293c46; color:#f4dfad; font-size:16px; font-weight:600;
+                padding:11px; border:1px solid #9c8961; border-radius:9px;
+            }
+            QPushButton:hover { background:#354f59; border-color:#edce88; }
+            QPushButton:pressed { background:#1d3039; }
+            QPushButton:disabled { color:#a8b1b5; background:#202e38; border-color:#52616b; }
+        """)
         self.setFixedWidth(390)
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        surface = QWidget()
+        surface.setObjectName("compass_surface")
+        outer.addWidget(surface)
+        layout = QVBoxLayout(surface)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(14)
         self.heading = QLabel("Boussole de récolte")
-        self.heading.setStyleSheet("font-size:21px;font-weight:bold;color:#edce88")
+        self.heading.setWordWrap(True)
+        self.heading.setStyleSheet("font-size:20px;font-weight:600;color:#edce88")
         self.heading.setToolTip("Glissez ce titre pour déplacer la boussole. La position est mémorisée pour cet écran.")
         self.heading.setCursor(Qt.SizeAllCursor)
         self.heading.installEventFilter(self)
@@ -68,7 +98,15 @@ class CompassPanel(QWidget):
         self.placement_geometry = None
         self.placement_key = None
         self.arrow = DirectionArrow()
+        self.resource = QLabel()
+        self.resource.setWordWrap(True)
+        self.resource.setTextFormat(Qt.PlainText)
+        self.resource.setStyleSheet("font-size:26px;font-weight:700;color:#ffffff")
+        self.wait = QLabel()
+        self.wait.setTextFormat(Qt.PlainText)
+        self.wait.setStyleSheet("font-size:23px;font-weight:600;color:#edce88")
         self.details = QLabel()
+        self.details.setStyleSheet("font-size:16px;color:#ccd5d9")
         self.details.setWordWrap(True)
         self.details.setTextFormat(Qt.PlainText)
         self.copy = QPushButton("Copier /travel (position)")
@@ -77,8 +115,17 @@ class CompassPanel(QWidget):
         self.copy.clicked.connect(owner.copy_destination)
         header = QHBoxLayout()
         header.addWidget(self.arrow)
-        header.addWidget(self.heading, 1)
+        titles = QVBoxLayout()
+        titles.setSpacing(5)
+        titles.addWidget(self.heading)
+        hint = QLabel("RÉCOLTE · PROCHAIN PASSAGE")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("font-size:11px;font-weight:600;color:#b4c2c9")
+        titles.addWidget(hint)
+        header.addLayout(titles, 1)
         layout.addLayout(header)
+        layout.addWidget(self.resource)
+        layout.addWidget(self.wait)
         layout.addWidget(self.details)
         layout.addWidget(self.copy)
 
@@ -147,11 +194,14 @@ class Compass:
         elif d is None:
             text = "Aucune destination recommandable.\nExplorez des passages, observez les ressources et leurs repousses. Un trajet ou un délai inconnu n’est pas inventé."
         else:
-            text = (f"{d.direction} · {d.name}\n[{d.x}, {d.y}] · monde {d.world_id} · {d.steps} carte(s) par passages appris\n"
-                    f"{countdown(d.wait)}\n{d.certainty}")
+            text = (f"{d.direction} · [{d.x}, {d.y}] · monde {d.world_id}\n"
+                    f"{d.steps} carte(s) par passages appris\n{d.certainty}")
         panel.details.setText(text)
         panel.details.setAccessibleName(text)
         panel.details.setToolTip(d.source if d else text)
+        panel.resource.setText(d.name if d else "En attente de destination")
+        panel.wait.setText(countdown(d.wait) if d else "")
+        panel.wait.setVisible(d is not None)
         panel.arrow.set_direction(d.direction if d else "")
         panel.copy.setEnabled(bool(d and d.command))
         visible = bool(enabled and w.overlay.pid is not None and w.overlay.foreground() == w.overlay.pid)

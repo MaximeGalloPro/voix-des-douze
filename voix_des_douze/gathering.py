@@ -200,7 +200,7 @@ class GatheringMemory:
         estimates = {}
         for r in rows:
             position = self.catalog["maps"].get(str(r["map_id"]))
-            if not position or r["map_id"] not in paths:
+            if r["map_id"] == self.current or not position or r["map_id"] not in paths:
                 continue
             if r["state"] == 0:
                 due, source = 0, "Disponible à la dernière observation"
@@ -216,9 +216,7 @@ class GatheringMemory:
             distance, first = paths[r["map_id"]]
             here = self.catalog["maps"].get(str(self.current))
             hop = self.catalog["maps"].get(str(first))
-            if distance == 0:
-                direction = "Ici"
-            elif here and hop:
+            if here and hop:
                 dx, dy = hop["x"]-here["x"], hop["y"]-here["y"]
                 direction = "Est →" if dx > 0 else "Ouest ←" if dx < 0 else "Sud ↓" if dy > 0 else "Nord ↑"
             else:
@@ -241,8 +239,7 @@ class GatheringMemory:
         if not self._destinations:
             return None
         r, p, steps, direction, due, source = min(self._destinations, key=order)
-        live = r["map_id"] == self.current and r["state"] == 0
-        certainty = "Disponible observée" if live else "Vue disponible · à vérifier" if r["state"] == 0 else "Repousse estimée · non confirmée"
+        certainty = "Vue disponible · à vérifier" if r["state"] == 0 else "Repousse estimée · non confirmée"
         return Destination(r["map_id"], r["element_id"], r["name"], p["x"], p["y"], p["world_id"],
                            steps, direction, max(0, due-now), certainty, source)
 

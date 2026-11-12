@@ -30,6 +30,17 @@ def snapshot(map_id=1, *resources):
     return ResourceSnapshot(map_id, True, resources, 0, "itw")
 
 
+def test_current_map_is_excluded_and_becomes_candidate_again_after_leaving(memory):
+    m, _, _ = memory
+    m.observe(snapshot(1, resource()))
+    assert m.recommend() is None
+    m.observe_transition(2, 1)
+    m.observe(snapshot(2))
+    assert m.recommend().map_id == 1
+    m.observe(snapshot(1, resource()))
+    assert m.recommend() is None
+
+
 def test_timer_starts_at_observed_depletion_not_harvest_start_or_duplicate_snapshot(memory):
     m, now, _ = memory
     m.observe(snapshot(1, resource()))
@@ -38,9 +49,12 @@ def test_timer_starts_at_observed_depletion_not_harvest_start_or_duplicate_snaps
     assert m.recommend() is None
     now[0] += 3
     m.observe(snapshot(1, resource(state=1, enabled=False)))
+    m.observe(snapshot(2))
+    m.observe_transition(2, 1)
     assert m.recommend().wait == 600
     now[0] += 20
     m.observe(snapshot(1, resource(state=1, enabled=False)))
+    m.observe(snapshot(2))
     assert m.recommend().wait == 580
     assert m.db.execute("SELECT COUNT(*) FROM harvests").fetchone()[0] == 1
     now[0] += 600
@@ -88,9 +102,7 @@ def test_available_first_then_priority_and_distance_with_directed_known_paths(me
     m.observe_transition(2, 3)
     m.set_preference(38, True, 1)
     m.set_preference(99, True, 2)
-    assert m.recommend().element_id == 10
-    m.observe(snapshot(1, resource(10, state=1)))
-    # Ready remote resource wins over waiting high priority at home.
+    # Current map is excluded even when it has a ready high-priority resource.
     assert m.recommend().element_id == 30
     assert m.recommend().direction == "Est →"
     assert m.recommend().steps == 2
