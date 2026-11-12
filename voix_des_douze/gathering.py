@@ -88,6 +88,12 @@ class GatheringMemory:
         self._destinations = ()
         self._built_revision = -1
 
+    def profiles(self):
+        rows = self.db.execute("""SELECT profile FROM resources UNION SELECT profile FROM edges
+            UNION SELECT profile FROM samples UNION SELECT profile FROM preferences
+            UNION SELECT profile FROM harvests ORDER BY profile""")
+        return [row[0] for row in rows if row[0]]
+
     def select_profile(self, profile):
         self.profile = profile.strip()
         self.reset_session()

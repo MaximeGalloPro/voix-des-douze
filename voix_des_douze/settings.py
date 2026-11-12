@@ -30,6 +30,8 @@ class Settings:
     first_resource_click: bool = False
     compass_enabled: bool = False
     compass_profile: str = ""
+    compass_profiles: list[str] = field(default_factory=list)
+    compass_positions: dict[str, list[int]] = field(default_factory=dict)
     volume: float = 0.8
     speed: float = 1.0
     default_voice: str = ""
@@ -71,6 +73,13 @@ class Store:
                     raise ValueError("Réglage des repères invalide")
                 if not isinstance(s.compass_enabled, bool) or not isinstance(s.compass_profile, str):
                     raise ValueError("Configuration de la boussole invalide")
+                if (not isinstance(s.compass_profiles, list)
+                        or not all(isinstance(p, str) and p.strip() for p in s.compass_profiles)
+                        or not isinstance(s.compass_positions, dict)
+                        or not all(isinstance(key, str) and isinstance(pos, list) and len(pos) == 2
+                                   and all(type(v) is int for v in pos)
+                                   for key, pos in s.compass_positions.items())):
+                    raise ValueError("Profils ou positions de boussole invalides")
                 for adjustment in s.overlay_adjustments.values():
                     if (not isinstance(adjustment, list) or len(adjustment) != 3
                             or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in adjustment)

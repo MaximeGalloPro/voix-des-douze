@@ -1,15 +1,51 @@
 """Accessible, non-activating harvest compass; clipboard only, no game input."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout,
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QTableWidget,
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPolygonF
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFormLayout,
+    QHBoxLayout, QLabel, QPushButton, QSpinBox, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget)
 
 from .gathering import GatheringMemory, countdown
 from .network_protocol import VERSION
 from .overlay import fullscreen_spaces
+
+
+class DirectionArrow(QWidget):
+    """Map axes: north is up; point to the next learned passage, not the final map."""
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(64, 64)
+        self.direction = ""
+
+    def set_direction(self, direction):
+        if direction != self.direction:
+            self.direction = direction
+            self.setAccessibleName(f"Direction : {direction or 'inconnue'}")
+            self.setToolTip(self.accessibleName())
+            self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(QColor("#edce88"), 3))
+        painter.translate(32, 32)
+        angle = next((angle for name, angle in
+                      (("Nord", 0), ("Est", 90), ("Sud", 180), ("Ouest", 270))
+                      if self.direction.startswith(name)), None)
+        if angle is not None:
+            painter.rotate(angle)
+            painter.setBrush(QColor("#edce88"))
+            painter.drawPolygon(QPolygonF([QPointF(0, -25), QPointF(21, 3),
+                                          QPointF(7, 3), QPointF(7, 24),
+                                          QPointF(-7, 24), QPointF(-7, 3), QPointF(-21, 3)]))
+        elif self.direction == "Ici":
+            painter.drawEllipse(QPointF(0, 0), 16, 16)
+            painter.setBrush(QColor("#edce88"))
+            painter.drawEllipse(QPointF(0, 0), 4, 4)
+        else:
+            painter.drawLine(-12, 0, 12, 0)
 
 
 class CompassPanel(QWidget):
@@ -25,6 +61,13 @@ class CompassPanel(QWidget):
         layout = QVBoxLayout(self)
         self.heading = QLabel("Boussole de récolte")
         self.heading.setStyleSheet("font-size:21px;font-weight:bold;color:#edce88")
+        self.heading.setToolTip("Glissez ce titre pour déplacer la boussole. La position est mémorisée pour cet écran.")
+        self.heading.setCursor(Qt.SizeAllCursor)
+        self.heading.installEventFilter(self)
+        self.drag_offset = None
+        self.placement_geometry = None
+        self.placement_key = None
+        self.arrow = DirectionArrow()
         self.details = QLabel()
         self.details.setWordWrap(True)
         self.details.setTextFormat(Qt.PlainText)
@@ -32,9 +75,37 @@ class CompassPanel(QWidget):
         self.copy.setFocusPolicy(Qt.NoFocus)
         self.copy.setToolTip("Copie uniquement la position géographique. Ne lance pas de voyage ; accès aux intérieurs et instances non garanti.")
         self.copy.clicked.connect(owner.copy_destination)
-        layout.addWidget(self.heading)
+        header = QHBoxLayout()
+        header.addWidget(self.arrow)
+        header.addWidget(self.heading, 1)
+        layout.addLayout(header)
         layout.addWidget(self.details)
         layout.addWidget(self.copy)
+
+    def bounded_position(self, position):
+        geometry = self.placement_geometry
+        return QPoint(max(geometry.left(), min(position.x(), geometry.right()-self.width()+1)),
+                      max(geometry.top(), min(position.y(), geometry.bottom()-self.height()+1)))
+
+    def eventFilter(self, watched, event):
+        if watched is self.heading and self.placement_geometry is not None:
+            if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+                self.drag_offset = event.globalPosition().toPoint() - self.pos()
+                return True
+            if event.type() == QEvent.MouseMove and self.drag_offset is not None:
+                self.move(self.bounded_position(event.globalPosition().toPoint() - self.drag_offset))
+                return True
+            if event.type() == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton and self.drag_offset is not None:
+                self.move(self.bounded_position(event.globalPosition().toPoint() - self.drag_offset))
+                self.drag_offset = None
+                relative = self.pos() - self.placement_geometry.topLeft()
+                self.owner.window.store.settings.compass_positions[self.placement_key] = [relative.x(), relative.y()]
+                try:
+                    self.owner.window.store.save()
+                except OSError as exc:
+                    self.owner.window.show_error(f"Position de la boussole non enregistrée : {exc}")
+                return True
+        return super().eventFilter(watched, event)
 
 
 class Compass:
@@ -82,6 +153,7 @@ class Compass:
         panel.details.setText(text)
         panel.details.setAccessibleName(text)
         panel.details.setToolTip(d.source if d else text)
+        panel.arrow.set_direction(d.direction if d else "")
         panel.copy.setEnabled(bool(d and d.command))
         visible = bool(enabled and w.overlay.pid is not None and w.overlay.foreground() == w.overlay.pid)
         newly_visible = visible and not panel.isVisible()
@@ -89,7 +161,13 @@ class Compass:
         screen = w.overlay.screen() if w.overlay.isVisible() else next(
             (s for s in QGuiApplication.screens() if f"{s.name()}:{s.geometry().width()}x{s.geometry().height()}" == settings.overlay_screen), w.screen())
         geometry = screen.availableGeometry()
-        panel.move(geometry.right()-panel.width()-15, geometry.top()+15)
+        key = f"{screen.name()}:{screen.geometry().width()}x{screen.geometry().height()}"
+        panel.placement_geometry, panel.placement_key = geometry, key
+        saved = settings.compass_positions.get(key)
+        if panel.drag_offset is None:
+            position = (geometry.topLeft() + QPoint(*saved) if saved is not None
+                        else QPoint(geometry.right()-panel.width()-15, geometry.top()+15))
+            panel.move(panel.bounded_position(position))
         panel.setVisible(visible)
         if newly_visible:
             fullscreen_spaces(panel)
@@ -135,9 +213,21 @@ class CompassSettings(QDialog):
         self.enabled.toggled.connect(self.toggle)
         layout.addWidget(self.enabled)
         form = QFormLayout()
-        self.profile = QLineEdit(compass.memory.profile)
-        self.profile.setPlaceholderText("Exemple : nom du serveur · nom du personnage")
-        self.profile.setAccessibleName("Profil serveur et personnage")
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        settings = compass.window.store.settings
+        self.profile = QComboBox()
+        self.profile.setEditable(True)
+        self.profile.setInsertPolicy(QComboBox.NoInsert)
+        self.profile.setMinimumContentsLength(28)
+        self.profile.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        settings.compass_profiles = list(dict.fromkeys(settings.compass_profiles
+            + compass.memory.profiles() + ([settings.compass_profile] if settings.compass_profile else [])))
+        self.profile.addItems(settings.compass_profiles)
+        self.profile.setCurrentText(compass.memory.profile)
+        self.profile.lineEdit().setPlaceholderText("Exemple : nom du serveur · nom du personnage")
+        self.profile.setAccessibleName("Profils enregistrés · serveur et personnage")
+        self.profile.activated.connect(self.use_profile)
+        self.profile.lineEdit().returnPressed.connect(self.use_profile)
         form.addRow("Profil serveur / personnage", self.profile)
         layout.addLayout(form)
         use = QPushButton("Utiliser ce profil")
@@ -185,7 +275,7 @@ class CompassSettings(QDialog):
         self.save_settings()
 
     def use_profile(self):
-        profile = self.profile.text().strip()
+        profile = self.profile.currentText().strip()
         if not profile:
             self.notice.setText("Saisissez un profil serveur / personnage pour isoler les observations.")
             return
@@ -193,7 +283,12 @@ class CompassSettings(QDialog):
         if profile != settings.compass_profile:
             settings.compass_profile = profile
             self.compass.memory.select_profile(profile)
+        if profile not in settings.compass_profiles:
+            settings.compass_profiles.append(profile)
         if self.save_settings():
+            if self.profile.findText(profile, Qt.MatchExactly) == -1:
+                self.profile.addItem(profile)
+            self.profile.setCurrentText(profile)
             self.load_types()
 
     def load_types(self):
