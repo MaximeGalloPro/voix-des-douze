@@ -13,6 +13,7 @@ from .network_protocol import VERSION
 from .overlay import fullscreen_spaces
 from .compass_debug import CompassJournal
 from .travel import TravelCalibration
+from .compass_map import CompassMap
 
 
 class DirectionArrow(QWidget):
@@ -186,6 +187,7 @@ class Compass:
         self.journal = CompassJournal(window.store.path.parent / "debug", window.show_error)
         self.calibration = TravelCalibration()
         self.calibration_view = None
+        self.map_dialog = None
         self.timer = QTimer(window)
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.refresh)
@@ -303,12 +305,21 @@ class Compass:
             QApplication.clipboard().setText(d.command)
             self.panel.copy.setToolTip(f"Copié : {d.command}")
 
+    def show_map(self):
+        if self.map_dialog is None:
+            self.map_dialog = CompassMap(self)
+        self.map_dialog.show()
+        self.map_dialog.raise_()
+        self.map_dialog.activateWindow()
+
 
     def close(self):
         self.timer.stop()
         self.cancel_calibration()
         self.journal.close()
         self.panel.close()
+        if self.map_dialog is not None:
+            self.map_dialog.close()
         self.memory.close()
 
 
@@ -322,6 +333,9 @@ class CompassSettings(QWidget):
         self.enabled.toggled.connect(self.toggle)
         heading = QHBoxLayout()
         heading.addWidget(self.enabled)
+        self.map_button = QPushButton("Voir la carte")
+        self.map_button.clicked.connect(compass.show_map)
+        heading.addWidget(self.map_button)
         heading.addStretch()
         self.help = QPushButton("(?)")
         self.help.setFixedWidth(38)

@@ -78,6 +78,8 @@ class GatheringMemory:
                 profile TEXT, map_id INTEGER, element_id INTEGER, type_id INTEGER,
                 name TEXT, state INTEGER, enabled INTEGER, seen REAL, cut REAL,
                 PRIMARY KEY(profile,map_id,element_id));
+            CREATE TABLE IF NOT EXISTS visited_maps (
+                profile TEXT, map_id INTEGER, PRIMARY KEY(profile,map_id));
             CREATE TABLE IF NOT EXISTS edges (
                 profile TEXT, origin INTEGER, target INTEGER,
                 PRIMARY KEY(profile,origin,target));
@@ -104,7 +106,8 @@ class GatheringMemory:
     def profiles(self):
         rows = self.db.execute("""SELECT profile FROM resources UNION SELECT profile FROM edges
             UNION SELECT profile FROM samples UNION SELECT profile FROM preferences
-            UNION SELECT profile FROM harvests UNION SELECT profile FROM travel ORDER BY profile""")
+            UNION SELECT profile FROM harvests UNION SELECT profile FROM travel
+            UNION SELECT profile FROM visited_maps ORDER BY profile""")
         return [row[0] for row in rows if row[0]]
 
     def select_profile(self, profile):
@@ -145,6 +148,7 @@ class GatheringMemory:
         previous = {r.element_id: r for r in self.previous.resources} if self.previous else {}
         estimates = {}
         with self.db:
+            self.db.execute("INSERT OR IGNORE INTO visited_maps VALUES (?,?)", (self.profile, snapshot.map_id))
             for r in snapshot.resources:
                 old = previous.get(r.element_id)
                 record = self.db.execute("SELECT cut,enabled FROM resources WHERE profile=? AND map_id=? AND element_id=?",
