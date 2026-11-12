@@ -173,7 +173,7 @@ class GatheringMemory:
 
     def types(self):
         return self.db.execute("""SELECT r.type_id, MIN(r.name) AS name,
-            COALESCE(p.enabled,1) AS enabled, COALESCE(p.priority,1) AS priority
+            COALESCE(p.enabled,1) AS enabled, COALESCE(p.priority,10) AS priority
             FROM resources r LEFT JOIN preferences p ON p.profile=r.profile AND p.type_id=r.type_id
             WHERE r.profile=? GROUP BY r.type_id ORDER BY name""", (self.profile,)).fetchall()
 
@@ -193,7 +193,7 @@ class GatheringMemory:
 
     def _build_candidates(self):
         paths = self._paths()
-        rows = self.db.execute("""SELECT r.*, COALESCE(p.priority,1) AS priority FROM resources r
+        rows = self.db.execute("""SELECT r.*, COALESCE(p.priority,10) AS priority FROM resources r
             LEFT JOIN preferences p ON p.profile=r.profile AND p.type_id=r.type_id
             WHERE r.profile=? AND r.enabled=1 AND COALESCE(p.enabled,1)=1""", (self.profile,)).fetchall()
         result = []

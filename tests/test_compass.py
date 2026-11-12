@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QEvent, QPoint, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 from shiboken6 import delete
@@ -42,7 +42,8 @@ def test_dragged_position_survives_timer_refresh_and_reopen(make_compass):
     compass.refresh()
     panel = compass.panel
     before = panel.pos()
-    handle = panel.heading
+    QTest.mouseMove(panel, panel.rect().center())
+    handle = panel.move_handle
     start = handle.rect().center()
     delta = QPoint(-120, 70)
     expected = panel.bounded_position(before + delta)
@@ -61,6 +62,23 @@ def test_dragged_position_survives_timer_refresh_and_reopen(make_compass):
     reopened_window.store.settings.compass_positions[reopened.panel.placement_key] = [100000, -100000]
     reopened.refresh()
     assert reopened.panel.placement_geometry.contains(reopened.panel.geometry())
+
+
+def test_hover_reveals_handle_but_arrow_cannot_move_panel(make_compass):
+    _, compass = make_compass()
+    compass.refresh()
+    panel = compass.panel
+    QApplication.sendEvent(panel, QEvent(QEvent.Leave))
+    assert not panel.move_handle.isVisible()
+    before = panel.pos()
+    QTest.mousePress(panel.arrow, Qt.LeftButton)
+    QTest.mouseMove(panel.arrow, QPoint(10, 10))
+    QTest.mouseRelease(panel.arrow, Qt.LeftButton)
+    assert panel.pos() == before
+    QApplication.sendEvent(panel, QEvent(QEvent.Enter))
+    assert panel.move_handle.isVisible()
+    QApplication.sendEvent(panel, QEvent(QEvent.Leave))
+    assert not panel.move_handle.isVisible()
 
 
 def test_profiles_without_observations_survive_restart_and_dropdown_selection(make_compass):

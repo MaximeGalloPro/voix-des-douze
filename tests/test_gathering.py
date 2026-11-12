@@ -93,6 +93,20 @@ def test_continuous_regrowth_teaches_but_return_from_another_map_does_not(memory
     assert m.estimate(99)[0] == 75
 
 
+def test_promoting_one_type_beats_nearer_unconfigured_resources(memory):
+    m, _, _ = memory
+    m.observe(snapshot(3, resource(30)))
+    m.observe(snapshot(2, resource(20, 99)))
+    m.observe(snapshot(1))
+    m.observe_transition(1, 2)
+    m.observe_transition(2, 3)
+    assert m.recommend().element_id == 20
+    m.set_preference(38, True, 9)
+    assert m.recommend().element_id == 30
+    m.set_preference(38, True, 11)
+    assert m.recommend().element_id == 20
+
+
 def test_available_first_then_priority_and_distance_with_directed_known_paths(memory):
     m, _, _ = memory
     m.observe(snapshot(3, resource(30)))

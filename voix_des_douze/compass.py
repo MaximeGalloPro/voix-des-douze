@@ -30,7 +30,7 @@ class DirectionArrow(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.translate(42, 42)
-        painter.setBrush(QColor("#202e38"))
+        painter.setBrush(Qt.NoBrush)
         painter.setPen(QPen(QColor("#52616b"), 1))
         painter.drawEllipse(QPointF(0, 0), 38, 38)
         for angle in range(0, 360, 30):
@@ -48,10 +48,6 @@ class DirectionArrow(QWidget):
             painter.setBrush(QColor("#edce88"))
             painter.drawPolygon(QPolygonF([QPointF(0, -24), QPointF(14, 14),
                                           QPointF(0, 7), QPointF(-14, 14)]))
-        elif self.direction == "Ici":
-            painter.drawEllipse(QPointF(0, 0), 16, 16)
-            painter.setBrush(QColor("#edce88"))
-            painter.drawEllipse(QPointF(0, 0), 4, 4)
         else:
             painter.drawLine(-12, 0, 12, 0)
 
@@ -67,67 +63,67 @@ class CompassPanel(QWidget):
         self.setObjectName("compass_panel")
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setStyleSheet("""
-            QWidget { color:#f4f1e7; font-size:17px; background:transparent; }
-            QWidget#compass_surface {
-                background:#17232c; border:1px solid #7f7457; border-radius:16px;
-            }
+            QWidget { color:#ffffff; font-size:16px; background:transparent; }
+            QLabel { font-weight:600; }
             QPushButton {
-                background:#293c46; color:#f4dfad; font-size:16px; font-weight:600;
-                padding:11px; border:1px solid #9c8961; border-radius:9px;
+                background:transparent; color:#f4dfad; font-size:16px; font-weight:600;
+                padding:4px; border:1px solid #9c8961; border-radius:6px;
             }
-            QPushButton:hover { background:#354f59; border-color:#edce88; }
-            QPushButton:pressed { background:#1d3039; }
-            QPushButton:disabled { color:#a8b1b5; background:#202e38; border-color:#52616b; }
+            QPushButton:hover { background:rgba(23,35,44,160); border-color:#edce88; }
+            QPushButton:disabled { color:#a8b1b5; border-color:#52616b; }
         """)
-        self.setFixedWidth(390)
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        surface = QWidget()
-        surface.setObjectName("compass_surface")
-        outer.addWidget(surface)
-        layout = QVBoxLayout(surface)
-        layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(14)
-        self.heading = QLabel("Boussole de récolte")
-        self.heading.setWordWrap(True)
-        self.heading.setStyleSheet("font-size:20px;font-weight:600;color:#edce88")
-        self.heading.setToolTip("Glissez ce titre pour déplacer la boussole. La position est mémorisée pour cet écran.")
-        self.heading.setCursor(Qt.SizeAllCursor)
-        self.heading.installEventFilter(self)
+        self.setFixedWidth(210)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
         self.drag_offset = None
         self.placement_geometry = None
         self.placement_key = None
+        self.move_handle = QPushButton("✥")
+        self.move_handle.setFixedSize(26, 26)
+        self.move_handle.setFocusPolicy(Qt.NoFocus)
+        self.move_handle.setAccessibleName("Déplacer la boussole")
+        self.move_handle.setToolTip("Maintenir et glisser pour déplacer la boussole.")
+        self.move_handle.setCursor(Qt.SizeAllCursor)
+        self.move_handle.installEventFilter(self)
+        policy = self.move_handle.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.move_handle.setSizePolicy(policy)
+        self.move_handle.hide()
         self.arrow = DirectionArrow()
+        self.distance = QLabel("—")
+        self.distance.setStyleSheet("font-size:28px;color:#edce88")
+        self.distance.setToolTip("Distance en cartes par les passages appris.")
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self.arrow)
+        header.addWidget(self.distance)
+        header.addWidget(self.move_handle, 0, Qt.AlignTop)
+        layout.addLayout(header)
         self.resource = QLabel()
         self.resource.setWordWrap(True)
         self.resource.setTextFormat(Qt.PlainText)
-        self.resource.setStyleSheet("font-size:26px;font-weight:700;color:#ffffff")
+        self.resource.setAlignment(Qt.AlignCenter)
         self.wait = QLabel()
         self.wait.setTextFormat(Qt.PlainText)
-        self.wait.setStyleSheet("font-size:23px;font-weight:600;color:#edce88")
-        self.details = QLabel()
-        self.details.setStyleSheet("font-size:16px;color:#ccd5d9")
-        self.details.setWordWrap(True)
-        self.details.setTextFormat(Qt.PlainText)
-        self.copy = QPushButton("Copier /travel (position)")
+        self.wait.setAlignment(Qt.AlignCenter)
+        self.wait.setStyleSheet("color:#edce88")
+        self.copy = QPushButton("—")
         self.copy.setFocusPolicy(Qt.NoFocus)
-        self.copy.setToolTip("Copie uniquement la position géographique. Ne lance pas de voyage ; accès aux intérieurs et instances non garanti.")
+        self.copy.setToolTip("Copier /travel : position géographique seulement, sans lancer de voyage ; accès aux intérieurs et instances non garanti.")
         self.copy.clicked.connect(owner.copy_destination)
-        header = QHBoxLayout()
-        header.addWidget(self.arrow)
-        titles = QVBoxLayout()
-        titles.setSpacing(5)
-        titles.addWidget(self.heading)
-        hint = QLabel("RÉCOLTE · PROCHAIN PASSAGE")
-        hint.setWordWrap(True)
-        hint.setStyleSheet("font-size:11px;font-weight:600;color:#b4c2c9")
-        titles.addWidget(hint)
-        header.addLayout(titles, 1)
-        layout.addLayout(header)
         layout.addWidget(self.resource)
         layout.addWidget(self.wait)
-        layout.addWidget(self.details)
         layout.addWidget(self.copy)
+
+    def enterEvent(self, event):
+        self.move_handle.show()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        if self.drag_offset is None:
+            self.move_handle.hide()
+        super().leaveEvent(event)
 
     def bounded_position(self, position):
         geometry = self.placement_geometry
@@ -135,7 +131,7 @@ class CompassPanel(QWidget):
                       max(geometry.top(), min(position.y(), geometry.bottom()-self.height()+1)))
 
     def eventFilter(self, watched, event):
-        if watched is self.heading and self.placement_geometry is not None:
+        if watched is self.move_handle and self.placement_geometry is not None:
             if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
                 self.drag_offset = event.globalPosition().toPoint() - self.pos()
                 return True
@@ -145,6 +141,7 @@ class CompassPanel(QWidget):
             if event.type() == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton and self.drag_offset is not None:
                 self.move(self.bounded_position(event.globalPosition().toPoint() - self.drag_offset))
                 self.drag_offset = None
+                self.move_handle.setVisible(self.underMouse())
                 relative = self.pos() - self.placement_geometry.topLeft()
                 self.owner.window.store.settings.compass_positions[self.placement_key] = [relative.x(), relative.y()]
                 try:
@@ -196,13 +193,18 @@ class Compass:
         else:
             text = (f"{d.direction} · [{d.x}, {d.y}] · monde {d.world_id}\n"
                     f"{d.steps} carte(s) par passages appris\n{d.certainty}")
-        panel.details.setText(text)
-        panel.details.setAccessibleName(text)
-        panel.details.setToolTip(d.source if d else text)
-        panel.resource.setText(d.name if d else "En attente de destination")
-        panel.wait.setText(countdown(d.wait) if d else "")
-        panel.wait.setVisible(d is not None)
         panel.arrow.set_direction(d.direction if d else "")
+        panel.setAccessibleDescription(text)
+        panel.arrow.setToolTip(text + (f"\n{d.source}" if d else ""))
+        panel.resource.setText(d.name if d else "—")
+        seconds = max(0, int(d.wait + 0.999)) if d else 0
+        panel.wait.setText(f"{seconds // 60}:{seconds % 60:02d}" if seconds else "")
+        panel.wait.setVisible(bool(d and seconds))
+        panel.wait.setToolTip(f"{d.certainty}\n{d.source}" if d else text)
+        panel.distance.setText(str(d.steps) if d else "—")
+        panel.distance.setAccessibleName(f"Distance : {d.steps} cartes" if d else "Aucune destination")
+        panel.copy.setText(f"[{d.x}, {d.y}]" if d else "—")
+        panel.copy.setAccessibleName(f"Copier /travel {d.x},{d.y}" if d and d.command else "Position non copiable")
         panel.copy.setEnabled(bool(d and d.command))
         visible = bool(enabled and w.overlay.pid is not None and w.overlay.foreground() == w.overlay.pid)
         newly_visible = visible and not panel.isVisible()
@@ -227,8 +229,7 @@ class Compass:
         d = self.destination
         if d and d.command:
             QApplication.clipboard().setText(d.command)
-            self.panel.copy.setText("Position copiée")
-            QTimer.singleShot(1500, lambda: self.panel.copy.setText("Copier /travel (position)"))
+            self.panel.copy.setToolTip(f"Copié : {d.command}")
 
 
     def close(self):
@@ -268,7 +269,7 @@ class CompassSettings(QWidget):
         use.clicked.connect(self.use_profile)
         layout.addWidget(use)
         info = QLabel("Choisissez le bon profil à chaque changement de serveur ou personnage : les cartes seules n’identifient pas le serveur.\n"
-                      "Disponible d’abord ; parmi les disponibles : priorité (1 = plus haute), puis distance. Sinon : repousse la plus tôt, puis priorité et distance.\n"
+                      "Disponible d’abord ; parmi les disponibles : priorité (10 par défaut, 1 = plus haute), puis distance. Sinon : repousse la plus tôt, puis priorité et distance.\n"
                       "Seuls les passages parcourus et confirmés sont appris, dans leur sens de parcours. Les repousses hors carte restent estimées.\n"
                       "La boussole reste présente au-dessus de Dofus, même sans cible, mais se masque dans les autres applications.")
         info.setWordWrap(True)
