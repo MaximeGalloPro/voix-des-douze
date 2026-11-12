@@ -33,13 +33,24 @@
       "confidence": "historical",
       "quote": "Nous avons donc décidé de l'augmenter à 600 secondes.",
       "scope": "Céréales de l'époque seulement ; aucune confirmation Unity."
+    },
+    "retroverse_metiers": {
+      "url": "https://retroverse.xixou.io/guide/metiers.html",
+      "snapshot_date": "2026-11-12",
+      "game_version": "Retroverse / Dofus Rétro (jeu dérivé, pas Unity)",
+      "kind": "cross_game_guide",
+      "confidence": "cross_game_estimate",
+      "file": "retroverse-metiers.html",
+      "size": 117554,
+      "sha256": "3cfe0b4bd1a2bcde68403eaf3110e195c6ddb3b209f1d18fac889afb45efa3ac",
+      "scope": "Noms d'interactifs du guide présents dans harvest ; qualificatif d'objet entre parenthèses retiré, Etain = Étain vérifié ; aucun délai par défaut ni transposition des bancs vers les espèces de poissons."
     }
   },
   "policy": {
     "maps": "Affichage de destinations observées uniquement ; aucune ressource ni arête prépeuplée.",
     "world_id": "Valeur worldMap de MapInformationData conservée, y compris -1 (non spécifié).",
     "travel": "Toujours false : flags intérieur/autopilot non décodés ; coordonnées seules insuffisantes.",
-    "respawns": "Type absent = délai inconnu ; apprentissage runtime prioritaire sur estimation historique."
+    "respawns": "Type absent = délai inconnu ; apprentissage runtime prioritaire, puis JOL Dofus 2 pour les neuf céréales historiques, puis estimation Retroverse / Rétro, non vérifiée Unity."
   },
   "maps": {
     "0":{"x":0,"y":0,"world_id":-1,"travel":false},
@@ -15514,6 +15525,21 @@
     "247333633":{"x":-38,"y":-76,"world_id":1,"travel":false}
   },
   "respawns": {
+    "1":{"seconds":60,"source":"retroverse_metiers","label":"Frêne : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Frêne (Bois de Frêne)","source_table":"Ressources du métier Bûcheron"},
+    "8":{"seconds":204,"source":"retroverse_metiers","label":"Chêne : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Chêne (Bois de Chêne)","source_table":"Ressources du métier Bûcheron"},
+    "17":{"seconds":84,"source":"retroverse_metiers","label":"Fer : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Fer","source_table":"Ressources du métier Mineur"},
+    "24":{"seconds":360,"source":"retroverse_metiers","label":"Argent : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Argent","source_table":"Ressources du métier Mineur"},
+    "25":{"seconds":420,"source":"retroverse_metiers","label":"Or : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Or","source_table":"Ressources du métier Mineur"},
+    "26":{"seconds":420,"source":"retroverse_metiers","label":"Bauxite : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Bauxite","source_table":"Ressources du métier Mineur"},
+    "28":{"seconds":480,"source":"retroverse_metiers","label":"If : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"If (Bois d'If)","source_table":"Ressources du métier Bûcheron"},
+    "29":{"seconds":660,"source":"retroverse_metiers","label":"Ébène : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Ébène (Bois d'Ebène)","source_table":"Ressources du métier Bûcheron"},
+    "30":{"seconds":1440,"source":"retroverse_metiers","label":"Orme : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Orme (Bois d'Orme)","source_table":"Ressources du métier Bûcheron"},
+    "31":{"seconds":480,"source":"retroverse_metiers","label":"Érable : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Érable (Bois d'Erable)","source_table":"Ressources du métier Bûcheron"},
+    "32":{"seconds":720,"source":"retroverse_metiers","label":"Charme : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Charme (Bois de Charme)","source_table":"Ressources du métier Bûcheron"},
+    "33":{"seconds":120,"source":"retroverse_metiers","label":"Châtaignier : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Châtaignier (Bois de Châtaignier)","source_table":"Ressources du métier Bûcheron"},
+    "34":{"seconds":180,"source":"retroverse_metiers","label":"Noyer : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Noyer (Bois de Noyer)","source_table":"Ressources du métier Bûcheron"},
+    "35":{"seconds":480,"source":"retroverse_metiers","label":"Merisier : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Merisier (Bois de Merisier)","source_table":"Ressources du métier Bûcheron"},
+    "37":{"seconds":216,"source":"retroverse_metiers","label":"Kobalte : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Kobalte","source_table":"Ressources du métier Mineur"},
     "38":{"seconds":600,"source":"jol_maturity_2012","label":"Blé : estimation historique 2.9 (2012), non vérifiée Unity","confidence":"historical"},
     "39":{"seconds":600,"source":"jol_maturity_2012","label":"Houblon : estimation historique 2.9 (2012), non vérifiée Unity","confidence":"historical"},
     "42":{"seconds":600,"source":"jol_maturity_2012","label":"Lin : estimation historique 2.9 (2012), non vérifiée Unity","confidence":"historical"},
@@ -15522,6 +15548,30 @@
     "45":{"seconds":600,"source":"jol_maturity_2012","label":"Avoine : estimation historique 2.9 (2012), non vérifiée Unity","confidence":"historical"},
     "46":{"seconds":600,"source":"jol_maturity_2012","label":"Chanvre : estimation historique 2.9 (2012), non vérifiée Unity","confidence":"historical"},
     "47":{"seconds":600,"source":"jol_maturity_2012","label":"Malt : estimation historique 2.9 (2012), non vérifiée Unity","confidence":"historical"},
-    "111":{"seconds":600,"source":"jol_maturity_2012","label":"Riz : estimation historique 2.9 (2012), non vérifiée Unity","confidence":"historical"}
+    "52":{"seconds":240,"source":"retroverse_metiers","label":"Étain : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Etain","source_table":"Ressources du métier Mineur"},
+    "53":{"seconds":156,"source":"retroverse_metiers","label":"Cuivre : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Cuivre","source_table":"Ressources du métier Mineur"},
+    "54":{"seconds":216,"source":"retroverse_metiers","label":"Manganèse : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Manganèse","source_table":"Ressources du métier Mineur"},
+    "55":{"seconds":180,"source":"retroverse_metiers","label":"Bronze : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Bronze","source_table":"Ressources du métier Mineur"},
+    "61":{"seconds":84,"source":"retroverse_metiers","label":"Edelweiss : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Edelweiss","source_table":"Ressources du métier Alchimiste"},
+    "66":{"seconds":48,"source":"retroverse_metiers","label":"Menthe Sauvage : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Menthe Sauvage (Feuille de Menthe Sauvage)","source_table":"Ressources du métier Alchimiste"},
+    "67":{"seconds":48,"source":"retroverse_metiers","label":"Trèfle à 5 feuilles : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Trèfle à 5 feuilles","source_table":"Ressources du métier Alchimiste"},
+    "68":{"seconds":48,"source":"retroverse_metiers","label":"Orchidée Freyesque : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Orchidée Freyesque","source_table":"Ressources du métier Alchimiste"},
+    "98":{"seconds":480,"source":"retroverse_metiers","label":"Bombu : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Bombu (Bois de Bombu)","source_table":"Ressources du métier Bûcheron"},
+    "100":{"seconds":2,"source":"retroverse_metiers","label":"Pichon : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Pichon (Pichon Eud'Compet)","source_table":"Ressources du métier Pêcheur"},
+    "101":{"seconds":480,"source":"retroverse_metiers","label":"Oliviolet : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Oliviolet (Bois d'Oliviolet)","source_table":"Ressources du métier Bûcheron"},
+    "108":{"seconds":480,"source":"retroverse_metiers","label":"Bambou : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Bambou (Bois de Bambou)","source_table":"Ressources du métier Bûcheron"},
+    "109":{"seconds":360,"source":"retroverse_metiers","label":"Bambou sombre : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Bambou sombre (Bois de Bambou Sombre)","source_table":"Ressources du métier Bûcheron"},
+    "110":{"seconds":2160,"source":"retroverse_metiers","label":"Bambou sacré : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Bambou sacré (Bois de Bambou Sacré)","source_table":"Ressources du métier Bûcheron"},
+    "111":{"seconds":600,"source":"jol_maturity_2012","label":"Riz : estimation historique 2.9 (2012), non vérifiée Unity","confidence":"historical"},
+    "112":{"seconds":48,"source":"retroverse_metiers","label":"Pandouille : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Pandouille (Graine de Pandouille)","source_table":"Ressources du métier Alchimiste"},
+    "113":{"seconds":36,"source":"retroverse_metiers","label":"Dolomite : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Dolomite","source_table":"Ressources du métier Mineur"},
+    "114":{"seconds":300,"source":"retroverse_metiers","label":"Silicate : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Silicate","source_table":"Ressources du métier Mineur"},
+    "121":{"seconds":240,"source":"retroverse_metiers","label":"Kaliptus : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Kaliptus (Bois de Kaliptus)","source_table":"Ressources du métier Bûcheron"},
+    "131":{"seconds":84,"source":"retroverse_metiers","label":"Perce-neige : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Perce-neige (Perce-Neige)","source_table":"Ressources du métier Alchimiste"},
+    "133":{"seconds":1440,"source":"retroverse_metiers","label":"Tremble : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Tremble (Bois de Tremble)","source_table":"Ressources du métier Bûcheron"},
+    "134":{"seconds":84,"source":"retroverse_metiers","label":"Frostiz : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Frostiz","source_table":"Ressources du métier Paysan"},
+    "135":{"seconds":36,"source":"retroverse_metiers","label":"Obsidienne : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Obsidienne","source_table":"Ressources du métier Mineur"},
+    "256":{"seconds":84,"source":"retroverse_metiers","label":"Ginseng : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Ginseng","source_table":"Ressources du métier Alchimiste"},
+    "401":{"seconds":480,"source":"retroverse_metiers","label":"Pin : estimation Retroverse / Rétro, non vérifiée Unity","confidence":"cross_game_estimate","source_name":"Pin (Bois de Pin)","source_table":"Ressources du métier Bûcheron"}
   }
 }

@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
+from html.parser import HTMLParser
 import urllib.request
 from pathlib import Path
 
@@ -29,27 +31,32 @@ FILES = {
     },
 }
 # Identités reprises du catalogue harvest, vérifiées à chaque génération.
-# Pas d'extension aux céréales ajoutées après 2012 ni aux autres métiers.
+# Les céréales historiques conservent la source Dofus 2, plus proche de Unity.
 HISTORICAL_CEREALS = {
     "38": "Blé", "39": "Houblon", "42": "Lin", "43": "Orge",
     "44": "Seigle", "45": "Avoine", "46": "Chanvre", "47": "Malt", "111": "Riz",
 }
 JOL_URL = "https://dofus.jeuxonline.info/actualite/38078/devblog-maturite-ressources"
+RETROVERSE_URL = "https://retroverse.xixou.io/guide/metiers.html"
+RETROVERSE_FILE = "retroverse-metiers.html"
+RETROVERSE_META = {
+    "size": 117554,
+    "sha256": "3cfe0b4bd1a2bcde68403eaf3110e195c6ddb3b209f1d18fac889afb45efa3ac",
+}
 
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def load_asset(cache: Path, filename: str, offline: bool) -> dict:
+def load_verified(cache: Path, filename: str, expected: dict, url: str, offline: bool) -> bytes:
     path = cache / filename
-    expected = FILES[filename]
     if path.exists():
         raw = path.read_bytes()
     elif offline:
         raise ValueError(f"Asset absent en mode hors ligne : {path}")
     else:
-        with urllib.request.urlopen(f"{BASE_URL}/{filename}", timeout=120) as response:
+        with urllib.request.urlopen(url, timeout=120) as response:
             raw = response.read()
         if len(raw) != expected["size"] or digest(raw) != expected["sha256"]:
             raise ValueError(f"Taille/SHA256 incorrect : {filename}")
@@ -57,7 +64,84 @@ def load_asset(cache: Path, filename: str, offline: bool) -> dict:
         path.write_bytes(raw)
     if len(raw) != expected["size"] or digest(raw) != expected["sha256"]:
         raise ValueError(f"Taille/SHA256 incorrect : {path} (laissé intact)")
-    return json.loads(raw)
+    return raw
+
+
+def load_asset(cache: Path, filename: str, offline: bool) -> dict:
+    return json.loads(load_verified(cache, filename, FILES[filename], f"{BASE_URL}/{filename}", offline))
+
+
+class RespawnTables(HTMLParser):
+    """Lire seulement la colonne Repousse des tableaux de ressources."""
+
+    def __init__(self):
+        super().__init__()
+        self.tables = []
+        self.rows = []
+        self.caption = ""
+        self.cell = None
+        self.in_caption = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self.rows, self.caption = [], ""
+        elif tag == "caption":
+            self.in_caption = True
+        elif tag == "tr":
+            self.row = []
+        elif tag in ("th", "td"):
+            self.cell = ""
+
+    def handle_data(self, data):
+        if self.in_caption:
+            self.caption += data
+        if self.cell is not None:
+            self.cell += data
+
+    def handle_endtag(self, tag):
+        if tag == "caption":
+            self.in_caption = False
+        elif tag in ("th", "td"):
+            self.row.append(" ".join(self.cell.split()))
+            self.cell = None
+        elif tag == "tr":
+            self.rows.append(self.row)
+        elif tag == "table" and self.caption.startswith("Ressources du métier "):
+            self.tables.append((self.caption, self.rows))
+
+
+def retroverse_respawns(raw: bytes, names: dict[str, str]) -> dict:
+    parser = RespawnTables()
+    parser.feed(raw.decode("utf-8"))
+    result = {}
+    for caption, rows in parser.tables:
+        column = rows[0].index("Repousse")
+        for row in rows[1:]:
+            # Le guide explicite « Frêne (Bois de Frêne) » ; l'interactif est Frêne.
+            name = row[0].split(" (", 1)[0]
+            # Seule différence orthographique vérifiée entre les deux catalogues.
+            name = {"Etain": "Étain"}.get(name, name)
+            matches = [type_id for type_id, known in names.items() if known == name]
+            if not matches:
+                continue
+            if len(matches) != 1:
+                raise ValueError(f"Correspondance Retroverse ambiguë : {name}")
+            match = re.fullmatch(r"(\d+(?:,\d+)?) (s|min)", row[column])
+            if not match:
+                raise ValueError(f"Délai Retroverse illisible : {name}/{row[column]}")
+            seconds = float(match[1].replace(",", ".")) * (60 if match[2] == "min" else 1)
+            # Plusieurs gisements portent le même nom dans le guide.
+            previous = result.get(matches[0])
+            if previous and previous["seconds"] != seconds:
+                raise ValueError(f"Délais Retroverse contradictoires : {name}")
+            result[matches[0]] = {
+                "seconds": int(seconds) if seconds.is_integer() else seconds,
+                "source": "retroverse_metiers",
+                "label": f"{name} : estimation Retroverse / Rétro, non vérifiée Unity",
+                "confidence": "cross_game_estimate",
+                "source_name": row[0], "source_table": caption,
+            }
+    return result
 
 
 def indexed_records(asset: dict, class_name: str, key_field: str) -> dict[int, dict]:
@@ -106,7 +190,8 @@ def build(cache: Path, harvest_path: Path, offline: bool) -> dict:
     harvest = json.loads(harvest_raw)
     if harvest["version"] != VERSION or harvest["source"] != f"ledouxm/dofus-sqlite@{RELEASE}":
         raise ValueError("Version du catalogue de récolte incompatible")
-    respawns = {}
+    retroverse = load_verified(cache, RETROVERSE_FILE, RETROVERSE_META, RETROVERSE_URL, offline)
+    respawns = retroverse_respawns(retroverse, harvest["interactive_names"])
     for type_id, name in sorted(HISTORICAL_CEREALS.items(), key=lambda item: int(item[0])):
         if harvest["interactive_names"].get(type_id) != name:
             raise ValueError(f"Identité de ressource incompatible : {type_id}/{name}")
@@ -115,6 +200,7 @@ def build(cache: Path, harvest_path: Path, offline: bool) -> dict:
             "label": f"{name} : estimation historique 2.9 (2012), non vérifiée Unity",
             "confidence": "historical",
         }
+    respawns = dict(sorted(respawns.items(), key=lambda item: int(item[0])))
     return {
         "version": 1,
         "game_version": VERSION,
@@ -132,12 +218,19 @@ def build(cache: Path, harvest_path: Path, offline: bool) -> dict:
                 "quote": "Nous avons donc décidé de l'augmenter à 600 secondes.",
                 "scope": "Céréales de l'époque seulement ; aucune confirmation Unity.",
             },
+            "retroverse_metiers": {
+                "url": RETROVERSE_URL, "snapshot_date": "2026-11-12",
+                "game_version": "Retroverse / Dofus Rétro (jeu dérivé, pas Unity)",
+                "kind": "cross_game_guide", "confidence": "cross_game_estimate",
+                "file": RETROVERSE_FILE, **RETROVERSE_META,
+                "scope": "Noms d'interactifs du guide présents dans harvest ; qualificatif d'objet entre parenthèses retiré, Etain = Étain vérifié ; aucun délai par défaut ni transposition des bancs vers les espèces de poissons.",
+            },
         },
         "policy": {
             "maps": "Affichage de destinations observées uniquement ; aucune ressource ni arête prépeuplée.",
             "world_id": "Valeur worldMap de MapInformationData conservée, y compris -1 (non spécifié).",
             "travel": "Toujours false : flags intérieur/autopilot non décodés ; coordonnées seules insuffisantes.",
-            "respawns": "Type absent = délai inconnu ; apprentissage runtime prioritaire sur estimation historique.",
+            "respawns": "Type absent = délai inconnu ; apprentissage runtime prioritaire, puis JOL Dofus 2 pour les neuf céréales historiques, puis estimation Retroverse / Rétro, non vérifiée Unity.",
         },
         "maps": maps,
         "respawns": respawns,
@@ -171,7 +264,7 @@ def main() -> None:
             raise ValueError("Catalogue différent de la génération reproductible")
     else:
         args.output.write_text(output, encoding="utf-8")
-    print(f"{len(catalog['maps'])} cartes ; {len(catalog['respawns'])} délais historiques ; travel certifié : 0")
+    print(f"{len(catalog['maps'])} cartes ; {len(catalog['respawns'])} délais estimés ; travel certifié : 0")
 
 
 if __name__ == "__main__":
