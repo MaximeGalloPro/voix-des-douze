@@ -20,6 +20,7 @@ from .native.network_capture import game_connections
 from .harvest import HarvestTracker
 from .gathering import MapTransitions
 from .monster_safety import MonsterSafety
+from .network_debug import POSITION_DEBUG, PositionDebug
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,10 @@ class NetworkSession:
         auth = None
         fd = None
         error = None
+        position_debug = None
         try:
+            if POSITION_DEBUG:
+                position_debug = PositionDebug(lambda message: self.emit("debug_error", message))
             if self.client not in clients():
                 raise ProtocolError("Le client choisi n’est plus disponible.")
             version = client_version(self.client.pid)
@@ -164,6 +168,8 @@ class NetworkSession:
                                          lambda event: self.emit("map_timing", event))
 
             def handle(direction, key, raw):
+                if position_debug is not None:
+                    position_debug.packet(self.monsters, direction, key, raw)
                 self.monsters.handle(direction, key, raw)
                 transitions.handle(direction, key, raw)
                 state.handle(direction, key, raw)
@@ -249,7 +255,11 @@ class NetworkSession:
         except Exception as exc:
             if not self.stop_event.is_set():
                 error = str(exc)
+                if position_debug is not None:
+                    position_debug.write("erreur worker", {"raison": error})
         finally:
+            if position_debug is not None:
+                position_debug.write("session fermée", {"raison": error, "arrêt_demandé": self.stop_event.is_set()})
             if fd is not None:
                 os.close(fd)
             self.stop()

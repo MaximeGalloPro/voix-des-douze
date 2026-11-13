@@ -569,6 +569,8 @@ class MainWindow(QMainWindow):
             self.compass.transition(value)
         elif kind == "map_timing":
             self.compass.timing(value)
+        elif kind == "debug_error":
+            self.show_error(value)
         else:
             revision, payload = value
             self.listener.deliver(revision, lambda: self.show_network_dialogue(kind, payload))
