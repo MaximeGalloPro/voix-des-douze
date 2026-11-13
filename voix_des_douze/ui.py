@@ -10,7 +10,7 @@ import threading
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QPushButton, QScrollArea, QSlider, QTableWidget, QTableWidgetItem, QTabWidget, QTextEdit, QVBoxLayout, QWidget)
+    QPushButton, QScrollArea, QSlider, QTableWidget, QTableWidgetItem, QTabWidget, QTextEdit, QToolButton, QVBoxLayout, QWidget)
 
 from .hotkeys import GlobalHotkeys, KEYS
 from .network import NetworkSession, clients
@@ -134,19 +134,32 @@ class MainWindow(QMainWindow):
             scroll.setWidget(page)
             self.tabs.addTab(scroll, label)
         map_layout, self.compass_layout, voices_layout = page_layouts
-        resource_box = QGroupBox("Ressources de la carte · debug réseau")
+        resource_box = QGroupBox("Récolte · son, repères et idle")
         resource_layout = QVBoxLayout(resource_box)
+        resource_debug = QWidget()
+        debug_layout = QVBoxLayout(resource_debug)
+        debug_layout.setContentsMargins(0, 0, 0, 0)
+        self.resource_debug_toggle = QToolButton()
+        self.resource_debug_toggle.setText("Ressources de la carte · debug réseau")
+        self.resource_debug_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.resource_debug_toggle.setArrowType(Qt.RightArrow)
+        self.resource_debug_toggle.setCheckable(True)
+        self.resource_debug_toggle.toggled.connect(resource_debug.setVisible)
+        self.resource_debug_toggle.toggled.connect(
+            lambda expanded: self.resource_debug_toggle.setArrowType(
+                Qt.DownArrow if expanded else Qt.RightArrow))
+        resource_debug.hide()
         self.resource_summary = QLabel("En attente de la première carte · aucun comptage disponible")
         self.resource_summary.setWordWrap(True)
         self.resource_summary.setAccessibleName("Résumé des ressources détectées")
-        resource_layout.addWidget(self.resource_summary)
+        debug_layout.addWidget(self.resource_summary)
         self.resource_table = QTableWidget(0, 6)
         self.resource_table.setHorizontalHeaderLabels(["Ressource", "État", "Récoltable par vous", "Case", "Identifiant", "Type"])
         self.resource_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.resource_table.setAccessibleName("Ressources détectées sur la carte courante")
         self.resource_table.setMaximumHeight(170)
         self.resource_table.horizontalHeader().setStretchLastSection(True)
-        resource_layout.addWidget(self.resource_table)
+        debug_layout.addWidget(self.resource_table)
         resource_controls = QHBoxLayout()
         self.resource_sound = QCheckBox("Son des ressources")
         self.resource_sound.toggled.connect(self.toggle_resource_sound)
@@ -215,6 +228,8 @@ class MainWindow(QMainWindow):
         self.refresh_idle_route_status()
         map_layout.addWidget(circuit)
         map_layout.addWidget(resource_box)
+        map_layout.addWidget(self.resource_debug_toggle)
+        map_layout.addWidget(resource_debug)
         map_layout.addStretch()
         voice_controls = QHBoxLayout()
         self.automatic = QCheckBox("Lecture automatique")
