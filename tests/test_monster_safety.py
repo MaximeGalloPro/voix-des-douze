@@ -30,7 +30,7 @@ def test_groups_are_distinguished_from_players_npcs_and_reset_per_map():
     sent = []
     safety.send(1, cell_coordinates(280), lambda: sent.append('safe'))
     assert sent == ['safe']
-    with pytest.raises(RuntimeError, match='moins de 1'):
+    with pytest.raises(RuntimeError):
         safety.send(1, cell_coordinates(300), lambda: sent.append('unsafe'))
     full(safety, 2)
     safety.send(2, cell_coordinates(300), lambda: sent.append('new map'))
@@ -40,7 +40,7 @@ def test_groups_are_distinguished_from_players_npcs_and_reset_per_map():
 
 
 @pytest.mark.parametrize('packed', [True, False])
-def test_movement_reserves_intermediate_cells_and_does_not_guess_animation_end(packed):
+def test_movement_reserves_intermediate_cells_until_next_continuous_movement(packed):
     safety = MonsterSafety()
     full(safety, actors=(actor(-20002, 65),))
     move(safety, -20002, [65, 24], packed)
@@ -50,8 +50,9 @@ def test_movement_reserves_intermediate_cells_and_does_not_guess_animation_end(p
         with pytest.raises(RuntimeError):
             safety.send(1, cell_coordinates(cell), lambda: pytest.fail('unsafe click'))
     move(safety, -20002, [24, 53], packed)
-    with pytest.raises(RuntimeError):
-        safety.send(1, cell_coordinates(65), lambda: pytest.fail('old swept area expired'))
+    sent = []
+    safety.send(1, cell_coordinates(65), lambda: sent.append('released'))
+    assert sent == ['released']
 
 
 @pytest.mark.parametrize('offset,blocked', [(0, True), (0.999, True), (1, False), (2, False), (3, False)])
@@ -66,6 +67,27 @@ def test_one_case_boundary(offset, blocked):
         assert not sent
     else:
         safety.send(1, (x + offset, y), lambda: sent.append(True))
+        assert sent == [True]
+
+
+@pytest.mark.parametrize('dx,dy,blocked', [
+    (0, -1.5, True), (0, 1.5, True),
+    (0.499, -1.999, True), (-0.499, 1.999, True),
+    (0.5, 0, False), (-0.5, 0, False),
+    (0, -2, False), (0, 2, False),
+])
+def test_monster_square_keeps_width_and_doubles_height(dx, dy, blocked):
+    safety = MonsterSafety()
+    full(safety, actors=(actor(-2, 280),))
+    u, v = cell_coordinates(280)
+    target = (u + dx + dy / 2, v + dx - dy / 2)
+    sent = []
+    if blocked:
+        with pytest.raises(RuntimeError, match='Protection anti-combat'):
+            safety.send(1, target, lambda: sent.append(True))
+        assert sent == []
+    else:
+        safety.send(1, target, lambda: sent.append(True))
         assert sent == [True]
 
 
@@ -282,10 +304,10 @@ def test_idle_skips_all_mob_and_uncertain_player_targets_then_leaves(route):
 
 @pytest.mark.parametrize('dx,dy,blocked', [
     (0.5, 0, True), (-0.5, 0, True), (0.501, 0, False),
-    (0, -2, True), (0, -2.001, False),
-    (0, 0.5, True), (0, 0.501, False), (0.75, -4, False),
+    (0, -2.75, True), (0, -2.751, False),
+    (0, 1.25, True), (0, 1.251, False), (0.75, -4, False),
 ])
-def test_reduced_player_envelope_boundaries(dx, dy, blocked):
+def test_square_player_envelope_boundaries(dx, dy, blocked):
     safety = MonsterSafety()
     full(safety, actors=(actor(12, 280, 3),))
     u, v = cell_coordinates(280)
@@ -300,29 +322,46 @@ def test_reduced_player_envelope_boundaries(dx, dy, blocked):
         assert sent == ['clicked']
 
 
-def test_player_passages_fade_in_order_but_stationary_endpoint_does_not(monkeypatch):
+@pytest.mark.parametrize('variant', [3, 5])
+def test_passages_fade_in_order_but_stationary_endpoint_does_not(monkeypatch, variant):
     from types import SimpleNamespace
     clock = [100.0]
     monkeypatch.setattr('voix_des_douze.monster_safety.time', SimpleNamespace(monotonic=lambda: clock[0]))
     safety = MonsterSafety()
-    full(safety, actors=(actor(12, 294, 3),))
+    full(safety, actors=(actor(12, 294, variant),))
     move(safety, 12, [294, 266, 238, 210, 182, 154, 141, 127, 114, 100, 87, 73, 60, 46, 33, 19])
-    initial = safety.player_opacity()[12]
+    opacity = safety.player_opacity if variant == 3 else safety.monster_opacity
+    initial = opacity()[12]
     clock[0] = 101.0
-    assert 0 < safety.player_opacity()[12][294] < initial[294]
-    with pytest.raises(PlayerOverlap):
+    assert 0 < opacity()[12][294] < initial[294]
+    with pytest.raises(RuntimeError):
         safety.send(1, cell_coordinates(294), lambda: pytest.fail('passage released too soon'))
-    clock[0] = 102.0
+    clock[0] = 101.41
     sent = []
     safety.send(1, cell_coordinates(294), lambda: sent.append('start released'))
-    with pytest.raises(PlayerOverlap):
+    with pytest.raises(RuntimeError):
         safety.send(1, cell_coordinates(100), lambda: pytest.fail('later passage released too soon'))
     clock[0] = 1000.0
     safety.send(1, cell_coordinates(100), lambda: sent.append('middle released'))
-    with pytest.raises(PlayerOverlap):
+    with pytest.raises(RuntimeError):
         safety.send(1, cell_coordinates(19), lambda: pytest.fail('stationary endpoint released'))
-    assert safety.player_paths[12] == {19}
+    assert set(opacity()[12]) == {19}
     assert sent == ['start released', 'middle released']
+
+
+def test_expired_monster_passage_does_not_release_another_groups_position(monkeypatch):
+    from types import SimpleNamespace
+    clock = [100.0]
+    monkeypatch.setattr('voix_des_douze.monster_safety.time', SimpleNamespace(monotonic=lambda: clock[0]))
+    safety = MonsterSafety()
+    full(safety, actors=(actor(-2, 294), actor(-3, 294)))
+    move(safety, -2, [294, 266, 238])
+    clock[0] = 110.0
+    with pytest.raises(RuntimeError):
+        safety.send(1, cell_coordinates(294), lambda: pytest.fail('stationary group released'))
+    assert 294 not in safety.monster_paths[-2]
+    assert safety.monster_paths[-3] == {294}
+    assert safety.monster_opacity()[-3][294] == 1
 
 
 def test_blocked_exit_rechecks_fade_without_network_updates_then_posts_once(route, monkeypatch):

@@ -193,7 +193,7 @@ class FirstResourceClick(QObject):
         self.idle_timeout = QTimer(self)
         self.idle_timeout.setSingleShot(True)
         self.idle_timeout.setTimerType(Qt.PreciseTimer)
-        self.idle_timeout.setInterval(10000)
+        self.idle_timeout.setInterval(5000)
         self.idle_timeout.timeout.connect(self.idle_expired)
         self.idle_hint = IdleHint(window)
         self.journey = IdleJourney(self)
@@ -207,7 +207,7 @@ class FirstResourceClick(QObject):
         journey = self.journey
         snapshot = self.snapshot
         with self.monsters.lock:
-            self.monsters.expire_player_paths()
+            self.monsters.expire_paths()
             safety = {
                 "carte": self.monsters.map_id, "synchronisé": self.monsters.synchronized,
                 "groupes": sorted(self.monsters.groups.values()),
@@ -343,7 +343,7 @@ class FirstResourceClick(QObject):
         self.idle_pending.pop(element_id, None)
         self.idle_target = None
         self.idle_changed.emit(f"Idle · récolte non confirmée · élément {element_id} ignoré pour cette visite")
-        self.record("récolte expirée", élément=element_id, délai_ms=10000)
+        self.record("récolte expirée", élément=element_id, délai_ms=self.idle_timeout.interval())
         self.idle_next()
 
     def record(self, stage, **fields):

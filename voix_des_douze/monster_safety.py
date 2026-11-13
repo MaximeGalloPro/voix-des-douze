@@ -13,12 +13,13 @@ def cell_coordinates(cell):
 _COORDINATES = tuple(cell_coordinates(cell) for cell in range(560))
 _CELLS = {point: cell for cell, point in enumerate(_COORDINATES)}
 
-MONSTER_DISTANCE = 1.0
+MONSTER_HALF_WIDTH = 0.5
+MONSTER_HALF_HEIGHT = 2.0
 PLAYER_HALF_WIDTH = 0.5
-PLAYER_ABOVE = 2.0
-PLAYER_BELOW = 0.5
-PLAYER_STEP_SECONDS = 0.3
-PLAYER_FADE_SECONDS = 2.0
+PLAYER_ABOVE = 2.75
+PLAYER_BELOW = 1.25
+PASSAGE_STEP_SECONDS = 0.3
+PASSAGE_FADE_SECONDS = 1.4
 
 
 def unpack_ids(body, number):
@@ -66,6 +67,19 @@ class PlayerOverlap(RuntimeError):
     """The target may hit a player sprite rather than the ground."""
 
 
+def passage_expiry(path, now):
+    expiry = {}
+    elapsed = 0.0
+    for start, end in zip(path, path[1:]):
+        u, v = _COORDINATES[start]
+        for cell in path_cells([start, end]):
+            x, y = _COORDINATES[cell]
+            expiry[cell] = now + elapsed + max(abs(x - u), abs(y - v)) * PASSAGE_STEP_SECONDS + PASSAGE_FADE_SECONDS
+        x, y = _COORDINATES[end]
+        elapsed += max(abs(x - u), abs(y - v)) * PASSAGE_STEP_SECONDS
+    return expiry
+
+
 class MonsterSafety:
     def __init__(self):
         self.lock = RLock()
@@ -80,6 +94,8 @@ class MonsterSafety:
             self.players = {}
             self.player_paths = {}
             self.player_expiry = {}
+            self.monster_paths = {}
+            self.monster_expiry = {}
 
     def handle(self, direction, key, raw):
         if direction == 'client' and key == 'joc':
@@ -135,8 +151,11 @@ class MonsterSafety:
                 cell = integer(position, 3)
                 if entity is None or cell is None or not 0 <= cell < 560:
                     raise ProtocolError("Groupe de monstres sans identifiant ou position valide.")
-                self.groups[signed(entity)] = cell
-                self.reserved.add(cell)
+                entity = signed(entity)
+                self.groups[entity] = cell
+                self.monster_paths[entity] = {cell}
+                self.monster_expiry[entity] = {}
+                self.reserved = set().union(*self.monster_paths.values())
             if key == 'jnj':
                 self.synchronized = True
         else:
@@ -145,22 +164,15 @@ class MonsterSafety:
                 return
             entity = signed(entity)
             path = unpack_ids(body, 1)
-            cells = path_cells(path)
+            path_cells(path)  # Validate before changing either actor tracker.
+            now = time.monotonic()
+            self.expire_paths(now)
             if entity in self.players:
-                now = time.monotonic()
-                self.expire_player_paths(now)
                 expiry = {}
                 if path[0] != self.players[entity]:
                     expiry.update(self.player_expiry[entity])
-                    expiry[self.players[entity]] = now + PLAYER_FADE_SECONDS
-                elapsed = 0.0
-                for start, end in zip(path, path[1:]):
-                    u, v = _COORDINATES[start]
-                    for cell in path_cells([start, end]):
-                        x, y = _COORDINATES[cell]
-                        expiry[cell] = now + elapsed + max(abs(x - u), abs(y - v)) * PLAYER_STEP_SECONDS + PLAYER_FADE_SECONDS
-                    x, y = _COORDINATES[end]
-                    elapsed += max(abs(x - u), abs(y - v)) * PLAYER_STEP_SECONDS
+                    expiry[self.players[entity]] = now + PASSAGE_FADE_SECONDS
+                expiry.update(passage_expiry(path, now))
                 expiry.pop(path[-1], None)
                 self.players[entity] = path[-1]
                 self.player_expiry[entity] = expiry
@@ -168,43 +180,54 @@ class MonsterSafety:
                 return
             if path[0] != self.groups[entity]:
                 raise ProtocolError("Position de monstre discontinue ; changez de carte pour resynchroniser.")
+            expiry = passage_expiry(path, now)
+            expiry.pop(path[-1], None)
             self.groups[entity] = path[-1]
-            # No observed animation-completion signal: never expire a swept area
-            # by guessing a timeout, nor discard a disappeared group's last area.
-            self.reserved.update(cells)
+            self.monster_expiry[entity] = expiry
+            self.monster_paths[entity] = set(expiry) | {path[-1]}
+            self.reserved = set().union(*self.monster_paths.values())
 
-    def expire_player_paths(self, now=None):
-        """Expire estimated passages, never a stationary player's last position."""
+    def expire_paths(self, now=None):
+        """Expire estimated passages, never an actor's last announced position."""
         with self.lock:
             now = time.monotonic() if now is None else now
-            for entity, expiry in self.player_expiry.items():
-                for cell in tuple(expiry):
-                    if expiry[cell] <= now:
-                        del expiry[cell]
-                        self.player_paths[entity].discard(cell)
+            for paths, deadlines in ((self.player_paths, self.player_expiry),
+                                     (self.monster_paths, self.monster_expiry)):
+                for entity, expiry in deadlines.items():
+                    for cell in tuple(expiry):
+                        if expiry[cell] <= now:
+                            del expiry[cell]
+                            paths[entity].discard(cell)
+            self.reserved = set().union(*self.monster_paths.values())
 
-    def player_opacity(self):
+    def passage_opacity(self, paths, deadlines):
         """Return the same active areas used by send, with a visual fade."""
         with self.lock:
             now = time.monotonic()
-            self.expire_player_paths(now)
-            return {entity: {cell: (max(0.0, min(1.0, (expiry[cell] - now) / PLAYER_FADE_SECONDS))
+            self.expire_paths(now)
+            return {entity: {cell: (max(0.0, min(1.0, (expiry[cell] - now) / PASSAGE_FADE_SECONDS))
                                    if cell in expiry else 1.0)
-                             for cell in self.player_paths[entity]}
-                    for entity, expiry in self.player_expiry.items()}
+                             for cell in paths[entity]}
+                    for entity, expiry in deadlines.items()}
+
+    def player_opacity(self):
+        return self.passage_opacity(self.player_paths, self.player_expiry)
+
+    def monster_opacity(self):
+        return self.passage_opacity(self.monster_paths, self.monster_expiry)
 
     def send(self, map_id, coordinates, callback):
         """Read the worker's latest state at dispatch, not a queued Qt snapshot."""
         with self.lock:
             if not self.synchronized or self.map_id != map_id:
                 raise RuntimeError("Protection anti-combat : positions non synchronisées ; changez de carte pendant l’écoute.")
-            self.expire_player_paths()
+            self.expire_paths()
             x, y = coordinates
-            if any(abs(x - u) + abs(y - v) < MONSTER_DISTANCE - 1e-9 for cell in self.reserved
-                   for u, v in (_COORDINATES[cell],)):
-                raise MonsterProximity("Protection anti-combat : clic annulé à moins de 1 case d’un groupe ou de son trajet observé sur cette carte.")
-            # Narrow sprite envelope: half a tile-width on each side and above
-            # the feet, one eighth below. Deliberately accepts more sprite risk.
+            if any(abs((x + y - u - v) / 2) < MONSTER_HALF_WIDTH - 1e-9
+                   and abs(x - y - u + v) < MONSTER_HALF_HEIGHT - 1e-9
+                   for cell in self.reserved for u, v in (_COORDINATES[cell],)):
+                raise MonsterProximity("Protection anti-combat : clic annulé dans le carré protégé d’un groupe ou de son trajet observé sur cette carte.")
+            # Square screen envelope, retaining the previous player's center.
             for cells in self.player_paths.values():
                 for cell in cells:
                     u, v = _COORDINATES[cell]
