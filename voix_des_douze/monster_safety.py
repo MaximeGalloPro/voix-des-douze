@@ -138,9 +138,12 @@ class MonsterSafety:
             cells = path_cells(path)
             if entity in self.players:
                 if path[0] != self.players[entity]:
-                    raise ProtocolError("Position de joueur discontinue ; changez de carte pour resynchroniser.")
+                    # A server update can stop or redirect a player before the
+                    # previously announced destination. Keep the old swept area
+                    # protected, but do not invalidate unrelated actors/clicks.
+                    cells.update(self.player_paths[entity])
                 self.players[entity] = path[-1]
-                # The next movement confirms the previous endpoint, not its arrival time.
+                # A continuous following update or full actor state replaces it.
                 self.player_paths[entity] = cells
                 return
             if path[0] != self.groups[entity]:

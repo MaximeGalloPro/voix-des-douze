@@ -216,3 +216,58 @@ def test_last_skipped_resource_does_not_bypass_a_dangerous_exit(route, monkeypat
     assert not c.idle and c.journey.expected is None
     assert not c.journey.timeout.isActive() and clicks == []
     assert errors
+
+
+def test_player_intermediate_stop_keeps_click_guard_and_accepts_following_path():
+    safety = MonsterSafety()
+    full(safety, actors=(actor(12, 294, 3),))
+    original = [294, 266, 238, 210, 182, 154, 141, 127, 114, 100, 87, 73, 60, 46, 33, 19]
+    move(safety, 12, original)
+    move(safety, 12, [100])
+    assert safety.synchronized
+    for cell in (100, 19, 294):
+        with pytest.raises(RuntimeError, match='Protection personnage'):
+            safety.send(1, cell_coordinates(cell), lambda: pytest.fail('uncertain player area cleared'))
+    sent = []
+    safety.send(1, cell_coordinates(550), lambda: sent.append('unrelated target'))
+    assert sent == ['unrelated target']
+    move(safety, 12, [100, 128])
+    with pytest.raises(RuntimeError, match='Protection personnage'):
+        safety.send(1, cell_coordinates(128), lambda: pytest.fail('following path unprotected'))
+    safety.send(1, cell_coordinates(294), lambda: sent.append('old area released'))
+    assert sent == ['unrelated target', 'old area released']
+
+
+def test_player_relocation_protects_old_and_new_areas_until_fresh_state():
+    safety = MonsterSafety()
+    full(safety, actors=(actor(12, 65, 3),))
+    move(safety, 12, [400])
+    for cell in (65, 400):
+        with pytest.raises(RuntimeError, match='Protection personnage'):
+            safety.send(1, cell_coordinates(cell), lambda: pytest.fail('relocation area unprotected'))
+    safety.handle('server', 'jns', blob(1, actor(12, 400, 3)))
+    sent = []
+    safety.send(1, cell_coordinates(65), lambda: sent.append('fresh state'))
+    assert sent == ['fresh state']
+
+
+def test_idle_skips_all_mob_and_uncertain_player_targets_then_leaves(route):
+    from voix_des_douze.harvest import Resource, ResourceSnapshot
+    w, c, clicks, errors, memory = route
+    resources = (Resource(1, 38, 'Blé', 280, 0, True),
+                 Resource(2, 38, 'Blé', 400, 0, True))
+    c.update(ResourceSnapshot(1, True, resources, 0, 'jnj'))
+    full(c.monsters, actors=(actor(-2, 280), actor(12, 398, 3)))
+    move(c.monsters, 12, [400])
+    c.toggle_idle()
+    c.idle_origin = 280
+    run_next(c)
+    assert c.idle and c.idle_skipped == {1} and clicks == []
+    run_next(c)
+    assert c.idle and c.idle_skipped == {1, 2} and clicks == []
+    run_next(c)
+    assert c.idle and c.journey.expected == 2 and len(clicks) == 1
+    c.update(empty(2))
+    run_next(c)
+    assert c.idle and c.journey.expected == 3 and len(clicks) == 2
+    assert errors == []
