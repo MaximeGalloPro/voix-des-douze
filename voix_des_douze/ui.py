@@ -568,6 +568,9 @@ class MainWindow(QMainWindow):
             self.listener.deliver(revision, lambda: self.show_network_dialogue(kind, payload))
 
     def clear_resources(self, message="En attente de la première carte · aucun comptage disponible"):
+        editor = getattr(self, "route_editor", None)
+        if editor is not None:
+            editor.interrupt()
         self.resource_summary.setText(message)
         self.resource_table.setRowCount(0)
         self.overlay.set_resources(())
@@ -601,9 +604,14 @@ class MainWindow(QMainWindow):
             self.resource_alert.play(self.volume.value() / 100)
 
     def show_resources(self, snapshot):
+        editor = getattr(self, "route_editor", None)
+        if editor is not None:
+            editor.observe(snapshot)
         self.compass.observe(snapshot)
         self.overlay.set_resources(snapshot.resources)
         self.resource_click.update(snapshot)
+        if editor is not None:
+            self.resource_click.timer.stop()
         mature = snapshot.mature_count
         immature = sum(resource.state == 1 for resource in snapshot.resources)
         harvesting = sum(resource.state == 2 for resource in snapshot.resources)
@@ -635,14 +643,18 @@ class MainWindow(QMainWindow):
         route = settings.idle_routes.get(settings.compass_profile, {})
         self.idle_route_status.setText(
             f"Profil : {settings.compass_profile or 'à choisir dans Boussole'} · "
-            + (f"Circuit actif · {len(route['maps'])} étapes ordonnées · retour en boucle"
+            + (f"{route.get('name') or 'Circuit actif'} · {len(route['maps'])} étapes ordonnées · retour en boucle"
                if route.get("enabled") else "Circuit désactivé · idle reste sur la carte courante"))
 
     def configure_idle_route(self):
         self.resource_click.stop_idle()
         self.resource_click.timer.stop()
         self.resource_click.cancel_debug_sequence()
-        RouteEditor(self).exec()
+        self.route_editor = RouteEditor(self)
+        try:
+            self.route_editor.exec()
+        finally:
+            self.route_editor = None
         self.refresh_idle_route_status()
 
     def refresh_map_exit_status(self):

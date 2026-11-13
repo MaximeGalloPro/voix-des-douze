@@ -212,30 +212,31 @@ def test_failed_harvest_cannot_be_treated_as_an_empty_map(route):
     assert 'Récolte non confirmée' in errors[-1]
 
 
-def test_editor_reorders_removes_and_saves_per_profile(route):
+def test_recording_starts_at_next_map_and_finishes_with_name_per_profile(route):
     w, c, clicks, errors, memory = route
     c.update(empty(1))
-    w.store.settings.idle_routes[memory.profile]['maps'] = []
     w.store.settings.idle_routes['Autre personnage'] = {'enabled': False, 'maps': [9]}
     dialog = RouteEditor(w)
+    dialog.name.setText('Boucle des champs')
     dialog.show()
-    for map_id in (1, 3, 4):
-        dialog.choices.setCurrentIndex(dialog.choices.findData(map_id))
-        QTest.mouseClick(next(b for b in dialog.findChildren(QPushButton)
-                             if b.text() == 'Ajouter'), Qt.LeftButton)
-    dialog.list.setCurrentRow(2)
-    dialog.move(-1)
-    assert dialog.stops == [1, 4, 3]
-    dialog.remove()
-    assert dialog.stops == [1, 3]
-    assert dialog.validate()
-    dialog.save()
+    QTest.mouseClick(dialog.start_button, Qt.LeftButton)
+    dialog.observe(empty(1))
+    assert dialog.stops == []
+    for map_id in (2, 2, 3, 4, 1, 2):
+        dialog.observe(empty(map_id))
+    assert dialog.stops == [2, 3, 4, 1, 2]
+    QTest.mouseClick(dialog.finish_button, Qt.LeftButton)
+    assert not dialog.recording
     assert dialog.result() == QDialog.Accepted
+    dialog.observe(empty(3))
     restored = Store(w.store.path).settings.idle_routes
-    assert restored[memory.profile] == {'enabled': True, 'maps': [1, 3]}
+    assert restored[memory.profile] == {
+        'name': 'Boucle des champs', 'enabled': True, 'maps': [2, 3, 4, 1]}
     assert restored['Autre personnage'] == {'enabled': False, 'maps': [9]}
     reopened = RouteEditor(w)
-    reopened.stops.reverse()
+    assert reopened.name.text() == 'Boucle des champs'
+    reopened.start_recording()
+    reopened.observe(empty(3))
     reopened.reject()
     assert Store(w.store.path).settings.idle_routes == restored
     assert clicks == []
@@ -243,14 +244,32 @@ def test_editor_reorders_removes_and_saves_per_profile(route):
     reopened.close()
 
 
+def test_recording_requires_name_and_stops_on_interruption(route):
+    w, c, clicks, errors, memory = route
+    c.update(empty(1))
+    dialog = RouteEditor(w)
+    dialog.start_recording()
+    assert not dialog.recording
+    dialog.name.setText('Test')
+    dialog.start_recording()
+    dialog.observe(empty(2))
+    dialog.interrupt()
+    dialog.observe(empty(3))
+    assert dialog.stops == [2]
+    assert not dialog.finish_button.isEnabled()
+    dialog.close()
+
+
 def test_editor_blocks_enabled_loop_without_return_and_rolls_back_save_failure(route, monkeypatch):
     w, c, clicks, errors, memory = route
     original = dict(w.store.settings.idle_routes[memory.profile])
     memory.db.execute('DELETE FROM edges WHERE origin=4')
     dialog = RouteEditor(w)
+    dialog.name.setText('Essai')
     dialog.save()
     assert dialog.result() == QDialog.Rejected
     assert '4 → 1' in dialog.notice.text()
+    assert not dialog.recording
     dialog.enabled.setChecked(False)
     monkeypatch.setattr(w.store, 'save', lambda: (_ for _ in ()).throw(OSError('disque plein')))
     dialog.save()

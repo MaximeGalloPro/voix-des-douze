@@ -95,12 +95,12 @@ class Store:
                     raise ValueError("Positions du badge IDLE invalides")
                 if (not isinstance(s.idle_routes, dict)
                         or not all(isinstance(key, str) and key.strip()
-                                   and isinstance(route, dict) and set(route) == {"enabled", "maps"}
+                                   and isinstance(route, dict) and {"enabled", "maps"} <= set(route) <= {"enabled", "maps", "name"}
+                                   and isinstance(route.get("name", ""), str)
                                    and type(route["enabled"]) is bool
                                    and isinstance(route["maps"], list)
                                    and all(type(m) is int and m > 0 for m in route["maps"])
-                                   and len(set(route["maps"])) == len(route["maps"])
-                                   and (not route["enabled"] or len(route["maps"]) >= 2)
+                                   and (not route["enabled"] or len(set(route["maps"])) >= 2)
                                    for key, route in s.idle_routes.items())):
                     raise ValueError("Circuit de cartes idle invalide")
                 if not isinstance(s.map_exit_screen, str) or not isinstance(s.map_exits, dict):

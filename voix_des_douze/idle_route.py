@@ -2,8 +2,8 @@
 from collections import deque
 
 from PySide6.QtCore import QObject, QPointF, QTimer
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                              QHBoxLayout, QLabel, QListWidget, QPushButton, QVBoxLayout)
+from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
+                              QLabel, QLineEdit, QListWidget, QPushButton, QVBoxLayout)
 
 from .map_exits import DIRECTIONS, sample_exit
 from .overlay import screen_key
@@ -46,8 +46,8 @@ class WalkingGraph:
         return tuple(reversed(path))
 
     def loop(self, stops):
-        if len(stops) < 2 or len(set(stops)) != len(stops):
-            raise ValueError('Choisissez au moins deux cartes distinctes, sans doublon.')
+        if len(stops) < 2 or len(set(stops)) < 2:
+            raise ValueError('Enregistrez au moins deux cartes distinctes.')
         return {(a, b): self.path(a, b) for a, b in zip(stops, stops[1:] + stops[:1])}
 
 
@@ -180,107 +180,122 @@ class RouteEditor(QDialog):
         self.window = window
         self.memory = window.compass.memory
         self.profile = window.store.settings.compass_profile
-        self.setWindowTitle('Circuit de cartes idle')
-        self.resize(720, 520)
+        self.recording = False
+        self.last_map = None
+        self.setWindowTitle('Enregistrer un circuit idle')
+        self.resize(620, 440)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f'Profil : {self.profile or "aucun — choisissez-le dans Boussole"}'))
-        help_text = QLabel('Liste ordonnée des cartes où récolter. Les cartes intermédiaires sont traversées sans récolte. '
-                           'Après la dernière étape, retour à la première. Les passages doivent avoir été appris, '
-                           'dans chaque sens nécessaire, avec la boussole active. Aucun déplacement pendant l’édition.')
+        layout.addWidget(QLabel(f'Profil : {self.profile or "à choisir dans Boussole"}'))
+        configuration = window.store.settings.idle_routes.get(self.profile, {})
+        self.name = QLineEdit(configuration.get('name', ''))
+        self.name.setPlaceholderText('Nom du circuit')
+        self.name.setAccessibleName('Nom du circuit idle')
+        layout.addWidget(self.name)
+        help_text = QLabel('Saisissez un nom, puis lancez l’enregistrement. La prochaine carte rejointe '
+                           'sera la première étape. Parcourez le circuit dans Dofus, puis cliquez sur '
+                           'Terminé. La carte actuelle n’est pas ajoutée au départ. Aucun clic automatique '
+                           'n’est envoyé pendant l’enregistrement.')
         help_text.setWordWrap(True)
         layout.addWidget(help_text)
-        configuration = window.store.settings.idle_routes.get(self.profile, {})
+        self.stops = list(configuration.get('maps', []))
+        self.list = QListWidget()
+        self.list.setAccessibleName('Cartes enregistrées dans l’ordre de visite')
+        layout.addWidget(self.list)
         self.enabled = QCheckBox('Utiliser ce circuit avec idle')
         self.enabled.setChecked(configuration.get('enabled', False))
         layout.addWidget(self.enabled)
-        self.stops = list(configuration.get('maps', []))
-        self.list = QListWidget()
-        self.list.setAccessibleName('Étapes du circuit idle, dans l’ordre')
-        layout.addWidget(self.list)
-        row = QHBoxLayout()
-        self.choices = QComboBox()
-        self.choices.setAccessibleName('Carte à ajouter au circuit')
-        known = {r[0] for r in self.memory.db.execute('SELECT map_id FROM visited_maps WHERE profile=?', (self.profile,))}
-        for a, b in self.memory.db.execute('SELECT origin,target FROM edges WHERE profile=?', (self.profile,)):
-            known.update((a, b))
-        snapshot = window.resource_click.snapshot
-        if snapshot is not None:
-            known.add(snapshot.map_id)
-        for map_id in sorted(known):
-            self.choices.addItem(map_label(self.memory, map_id), map_id)
-        row.addWidget(self.choices, 1)
-        self.button(row, 'Ajouter', self.add)
-        layout.addLayout(row)
-        actions = QHBoxLayout()
-        self.button(actions, 'Monter', lambda: self.move(-1))
-        self.button(actions, 'Descendre', lambda: self.move(1))
-        self.button(actions, 'Retirer', self.remove)
-        self.button(actions, 'Vérifier les passages', self.validate)
-        layout.addLayout(actions)
+        self.start_button = QPushButton('Lancer l’enregistrement')
+        self.start_button.clicked.connect(self.start_recording)
+        layout.addWidget(self.start_button)
         self.notice = QLabel()
         self.notice.setWordWrap(True)
         layout.addWidget(self.notice)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Save).setText('Enregistrer')
+        self.finish_button = buttons.button(QDialogButtonBox.Save)
+        self.finish_button.setText('Terminé')
+        self.finish_button.setEnabled(bool(self.stops))
         buttons.button(QDialogButtonBox.Cancel).setText('Annuler')
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.refresh()
 
-    def button(self, layout, text, callback):
-        button = QPushButton(text)
-        button.clicked.connect(callback)
-        layout.addWidget(button)
-
-    def refresh(self, selected=0):
+    def refresh(self):
         self.list.clear()
         self.list.addItems([f'{i + 1}. {map_label(self.memory, m)}' for i, m in enumerate(self.stops)])
-        self.list.setCurrentRow(selected)
-        self.notice.setText('Ajoutez des cartes explorées, puis vérifiez la boucle complète, retour inclus.')
 
-    def add(self):
-        map_id = self.choices.currentData()
-        if map_id is None:
-            self.notice.setText('Synchronisez des cartes avec la boussole active pour remplir la liste.')
-        elif map_id in self.stops:
-            self.notice.setText('Cette carte figure déjà dans le circuit.')
-        else:
-            self.stops.append(map_id)
-            self.refresh(len(self.stops) - 1)
-
-    def move(self, delta):
-        index = self.list.currentRow()
-        following = index + delta
-        if 0 <= index < len(self.stops) and 0 <= following < len(self.stops):
-            self.stops[index], self.stops[following] = self.stops[following], self.stops[index]
-            self.refresh(following)
-
-    def remove(self):
-        index = self.list.currentRow()
-        if 0 <= index < len(self.stops):
-            self.stops.pop(index)
-            self.refresh(min(index, len(self.stops) - 1))
-
-    def validate(self):
-        try:
-            legs = WalkingGraph(self.memory).loop(tuple(self.stops))
-        except ValueError as exc:
-            self.notice.setText(str(exc))
-            return False
-        self.notice.setText('Boucle complète : ' + ' ; '.join(
-            f'{a} → {b} : {len(path)} passage(s)' for (a, b), path in legs.items()))
-        return True
-
-    def save(self):
-        if not self.profile:
+    def start_recording(self):
+        if not self.profile or self.memory.profile != self.profile:
             self.notice.setText('Choisissez d’abord un profil dans Boussole.')
             return
-        if self.enabled.isChecked() and not self.validate():
+        if not self.name.text().strip():
+            self.notice.setText('Saisissez le nom du circuit.')
             return
+        if not self.window.accepting or self.window.paused:
+            self.notice.setText('Démarrez l’écoute avant l’enregistrement.')
+            return
+        self.window.resource_click.stop_idle()
+        self.window.resource_click.timer.stop()
+        self.window.resource_click.cancel_debug_sequence()
+        snapshot = self.window.resource_click.snapshot
+        self.last_map = snapshot.map_id if snapshot is not None else None
+        self.stops = []
+        self.recording = True
+        self.name.setEnabled(False)
+        self.start_button.setEnabled(False)
+        self.finish_button.setEnabled(True)
+        self.refresh()
+        self.notice.setText('Enregistrement armé · en attente de la prochaine carte.')
+
+    def observe(self, snapshot):
+        if not self.recording or snapshot.map_id == self.last_map:
+            return
+        if self.window.store.settings.compass_profile != self.profile:
+            self.interrupt()
+            return
+        if self.stops:
+            self.memory.observe_transition(self.stops[-1], snapshot.map_id)
+        self.last_map = snapshot.map_id
+        self.stops.append(snapshot.map_id)
+        self.refresh()
+        self.notice.setText(f'Enregistrement en cours · {len(self.stops)} carte(s). Cliquez sur Terminé pour arrêter.')
+
+    def interrupt(self):
+        if self.recording:
+            self.recording = False
+            self.start_button.setEnabled(True)
+            self.name.setEnabled(True)
+            self.finish_button.setEnabled(False)
+            self.notice.setText('Enregistrement interrompu par l’arrêt de l’écoute ou un changement de profil. Relancez-le.')
+
+    def done(self, result):
+        self.recording = False
+        super().done(result)
+
+    def save(self):
+        # Stop first: later network arrivals must not extend a finished recording.
+        self.recording = False
+        self.start_button.setEnabled(True)
+        self.name.setEnabled(True)
+        if not self.name.text().strip():
+            self.notice.setText('Saisissez le nom du circuit.')
+            return
+        if len(self.stops) > 1 and self.stops[-1] == self.stops[0]:
+            self.stops.pop()
+            self.refresh()
+        if len(set(self.stops)) < 2:
+            self.notice.setText('Enregistrez au moins deux cartes distinctes avant de terminer.')
+            return
+        if self.enabled.isChecked():
+            try:
+                WalkingGraph(self.memory).loop(tuple(self.stops))
+            except ValueError as exc:
+                self.notice.setText(str(exc) + ' Circuit arrêté ; décochez son utilisation pour le conserver.')
+                return
         settings = self.window.store.settings
         previous = settings.idle_routes.get(self.profile)
-        settings.idle_routes[self.profile] = {'enabled': self.enabled.isChecked(), 'maps': list(self.stops)}
+        settings.idle_routes[self.profile] = {
+            'name': self.name.text().strip(), 'enabled': self.enabled.isChecked(), 'maps': list(self.stops)}
         try:
             self.window.store.save()
         except OSError as exc:

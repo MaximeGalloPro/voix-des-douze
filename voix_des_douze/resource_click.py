@@ -210,6 +210,9 @@ class FirstResourceClick(QObject):
             self.stop_idle()
             return
         w = self.window
+        if getattr(w, "route_editor", None) is not None:
+            w.show_error("Idle : terminez ou annulez l’enregistrement du circuit.")
+            return
         if (self.snapshot is None or not w.accepting or w.paused
                 or w.overlay.pid is None or w.overlay.foreground() != w.overlay.pid):
             w.show_error("Idle : synchronisez une carte et gardez Dofus au premier plan pendant l’écoute.")
