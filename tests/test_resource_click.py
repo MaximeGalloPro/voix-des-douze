@@ -326,3 +326,51 @@ def test_idle_discards_pending_clicks(assist, action):
     assert not c.idle_pending
     if action != "unavailable":
         assert not c.idle
+
+
+@pytest.mark.parametrize("completion", ["depleted", "removed", "unavailable"])
+def test_idle_collects_existing_resources_serially(assist, monkeypatch, completion):
+    w, c, clicks, errors = assist
+    w.first_resource.setChecked(False)
+    now = [100.0]
+    monkeypatch.setattr("voix_des_douze.resource_click.time.monotonic", lambda: now[0])
+    monkeypatch.setattr("voix_des_douze.resource_click.random.randint", lambda a, b: 1200)
+
+    def observed(state=0, enabled=True, present=True, new=False):
+        resources = ([Resource(1, 1, "Blé", 280, state, enabled)] if present else [])
+        resources.append(Resource(2, 1, "Blé", 281, 0, True))
+        if new:
+            resources.append(Resource(3, 1, "Blé", 282, 0, True))
+        return ResourceSnapshot(1, False, tuple(resources), 0, "itw")
+
+    c.update(observed())
+    c.toggle_idle()
+    c.idle_next()
+    assert clicks == []
+    now[0] = 101.2
+    c.idle_next()
+    assert len(clicks) == 1
+    assert c.idle_target == 1
+    # Repeated states, new arrivals and harvesting in progress must not
+    # interrupt the current target, even after all delays have elapsed.
+    c.update(observed(new=True))
+    now[0] = 110.0
+    c.idle_next()
+    c.update(observed(state=2, new=True))
+    c.idle_next()
+    assert len(clicks) == 1
+    assert c.idle_target == 1
+    c.update(observed(state=1 if completion == "depleted" else 0,
+                      enabled=completion != "unavailable",
+                      present=completion != "removed", new=True))
+    c.idle_next()
+    assert len(clicks) == 2
+    assert c.idle_target == 2
+    c.idle_next()
+    assert len(clicks) == 2
+    c.stop_idle()
+    assert c.idle_target is None
+    assert not c.idle_pending
+    c.idle_next()
+    assert len(clicks) == 2
+    assert errors == []

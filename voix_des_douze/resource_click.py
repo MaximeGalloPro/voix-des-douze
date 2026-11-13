@@ -142,6 +142,7 @@ class FirstResourceClick(QObject):
         self.timer.timeout.connect(self.click)
         self.idle = False
         self.idle_pending = {}
+        self.idle_target = None
         self.idle_timer = QTimer(self)
         self.idle_timer.setSingleShot(True)
         self.idle_timer.setTimerType(Qt.PreciseTimer)
@@ -151,6 +152,7 @@ class FirstResourceClick(QObject):
         self.idle = False
         self.idle_timer.stop()
         self.idle_pending.clear()
+        self.idle_target = None
         self.idle_changed.emit("Idle désactivé")
 
     def toggle_idle(self):
@@ -165,10 +167,16 @@ class FirstResourceClick(QObject):
         self.timer.stop()
         self.cancel_debug_sequence()
         self.idle = True
-        self.idle_changed.emit("Idle actif · attente d’apparition · 800–1 800 ms")
+        now = time.monotonic()
+        self.idle_pending = {
+            r.element_id: now + random.randint(800, 1800) / 1000
+            for r in self.snapshot.resources if r.harvestable}
+        self.idle_changed.emit("Idle actif · une cible à la fois · 800–1 800 ms")
+        if self.idle_pending:
+            self.idle_timer.start(0)
 
     def idle_next(self):
-        if not self.idle or not self.idle_pending:
+        if not self.idle or self.idle_target is not None or not self.idle_pending:
             return
         element_id = min(self.idle_pending, key=self.idle_pending.get)
         remaining = self.idle_pending[element_id] - time.monotonic()
@@ -176,11 +184,11 @@ class FirstResourceClick(QObject):
             self.idle_timer.start(max(1, math.ceil(remaining * 1000)))
             return
         del self.idle_pending[element_id]
+        self.idle_target = element_id
         if not self.click(manual=True, element_id=element_id):
             self.stop_idle()
             return
-        if self.idle_pending:
-            self.idle_timer.start(0)
+        # Only a later network update can release the current target.
 
     def record(self, stage, **fields):
         if self.file is None:
@@ -276,12 +284,18 @@ class FirstResourceClick(QObject):
         elif self.idle:
             before = {r.element_id for r in previous.resources if r.harvestable}
             available = {r.element_id for r in snapshot.resources if r.harvestable}
+            if self.idle_target is not None:
+                target = next((r for r in snapshot.resources
+                               if r.element_id == self.idle_target), None)
+                if target is None or target.state == 1 or (
+                        target.state == 0 and not target.harvestable):
+                    self.idle_target = None
             for element_id in self.idle_pending.keys() - available:
                 del self.idle_pending[element_id]
             now = time.monotonic()
-            for element_id in available - before:
+            for element_id in (available - before) - {self.idle_target}:
                 self.idle_pending[element_id] = now + random.randint(800, 1800) / 1000
-            if self.idle_pending:
+            if self.idle_pending and self.idle_target is None:
                 self.idle_timer.start(0)
 
     def click(self, manual=False, element_id=None):
