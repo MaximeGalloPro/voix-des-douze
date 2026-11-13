@@ -50,6 +50,10 @@ def path_cells(path):
     return result
 
 
+class MonsterProximity(RuntimeError):
+    """The target intersects a monster's protected ground area."""
+
+
 class PlayerOverlap(RuntimeError):
     """The target may hit a player sprite rather than the ground."""
 
@@ -154,7 +158,7 @@ class MonsterSafety:
             x, y = coordinates
             if any(abs(x - u) + abs(y - v) < 2 - 1e-9 for cell in self.reserved
                    for u, v in (_COORDINATES[cell],)):
-                raise RuntimeError("Protection anti-combat : clic annulé à moins de 2 cases d’un groupe ou de son trajet observé sur cette carte.")
+                raise MonsterProximity("Protection anti-combat : clic annulé à moins de 2 cases d’un groupe ou de son trajet observé sur cette carte.")
             # Project a broad upright sprite envelope: one tile-width on each side,
             # two tile-widths above the feet and half a tile-width below.
             for cells in self.player_paths.values():

@@ -100,13 +100,16 @@ def test_all_harvest_modes_recheck_monsters_at_dispatch(assist, tmp_path, mode):
         c.manual_click()
     elif mode == 'idle':
         run_next(c)
-        assert not c.idle
+        assert c.idle and c.idle_skipped == {1}
         assert not c.idle_timeout.isActive()
     else:
         c.timer.stop()
         c.click()
     assert clicks == []
-    assert any('Protection anti-combat' in error for error in errors)
+    if mode == 'idle':
+        assert errors == []
+    else:
+        assert any('Protection anti-combat' in error for error in errors)
 
 
 def test_exit_guard_checks_actual_randomized_point_and_stops_circuit(route, monkeypatch):
@@ -155,13 +158,14 @@ def test_player_feet_head_and_movement_are_protected_without_guessing_self_ident
     assert sent == ['clear', 'next map']
 
 
-def test_idle_skips_player_overlap_then_harvests_elsewhere_and_leaves(route):
+@pytest.mark.parametrize('variant', [3, 5])
+def test_idle_skips_protected_resource_then_harvests_elsewhere_and_leaves(route, variant):
     from voix_des_douze.harvest import Resource, ResourceSnapshot
     w, c, clicks, errors, memory = route
     first = Resource(1, 38, 'Blé', 280, 0, True)
     second = Resource(2, 38, 'Blé', 400, 0, True)
     c.update(ResourceSnapshot(1, True, (first, second), 0, 'jnj'))
-    full(c.monsters, actors=(actor(12, 280, 3),))
+    full(c.monsters, actors=(actor(12 if variant == 3 else -2, 280, variant),))
     c.toggle_idle()
     c.idle_origin = 280
     run_next(c)
@@ -175,13 +179,40 @@ def test_idle_skips_player_overlap_then_harvests_elsewhere_and_leaves(route):
     run_next(c)
     assert c.journey.expected == 2 and len(clicks) == 2
     assert errors == []
+    for map_id, following in ((2, 3), (3, 4), (4, 3), (3, 2), (2, 1)):
+        c.update(empty(map_id))
+        run_next(c)
+        assert c.journey.expected == following
+    # A skipped resource is eligible on the next visit if its protection has cleared.
+    c.update(ResourceSnapshot(1, True, (first,), 0, 'jnj'))
+    full(c.monsters)
+    count = len(clicks)
+    run_next(c)
+    assert c.idle_target == 1 and len(clicks) == count + 1
+    assert not c.idle_skipped
 
 
-def test_monster_refusal_still_stops_idle_even_if_a_player_also_overlaps(route):
+def test_unsynchronized_actor_state_still_stops_idle(route):
     w, c, clicks, errors, memory = route
     c.update(snapshot(1))
-    full(c.monsters, actors=(actor(12, 280, 3), actor(-2, 280)))
+    c.monsters.clear()
     c.toggle_idle()
     run_next(c)
     assert not c.idle and clicks == []
     assert 'anti-combat' in errors[-1]
+
+
+def test_last_skipped_resource_does_not_bypass_a_dangerous_exit(route, monkeypatch):
+    w, c, clicks, errors, memory = route
+    c.update(snapshot(1, cell=343))
+    full(c.monsters, actors=(actor(-2, 356),))
+    geometry = w.screen().geometry()
+    point = fullscreen_transform(geometry, [0, 0, 1]).map(cell_point(356))
+    monkeypatch.setattr('voix_des_douze.idle_route.sample_exit', lambda *args: point)
+    c.toggle_idle()
+    run_next(c)
+    assert c.idle and c.idle_skipped == {1} and clicks == []
+    run_next(c)
+    assert not c.idle and c.journey.expected is None
+    assert not c.journey.timeout.isActive() and clicks == []
+    assert errors
