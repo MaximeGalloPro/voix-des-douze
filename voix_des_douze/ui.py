@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         self.adjustment = None
         self.exit_calibration = None
         self.resource_click = FirstResourceClick(self)
+        self.overlay.protection_settings = lambda: self.store.settings
         self.shutting_down = False
         self.build_ui()
         self.resource_click.idle_changed.connect(self.idle_state_changed)
@@ -178,6 +179,12 @@ class MainWindow(QMainWindow):
         self.overlay_status.setWordWrap(True)
         overlay_controls.addWidget(self.overlay_status, 1)
         resource_layout.addLayout(overlay_controls)
+        self.protection_debug = QCheckBox("Debug protections · zones et calculs (session uniquement)")
+        self.protection_debug.setToolTip(
+            "Affiche les zones réellement protégées, les trajets mémorisés, les sorties calibrées, "
+            "le calcul sous la souris et le résultat du dernier clic. Aucun clic ajouté ; overlay traversant.")
+        self.protection_debug.toggled.connect(self.toggle_protection_overlay)
+        resource_layout.addWidget(self.protection_debug)
         self.first_resource = QCheckBox("Premier clic automatique à l’arrivée")
         self.first_resource.setToolTip(
             "Un clic sur une ressource récoltable aléatoire, uniquement si Dofus est au premier plan. "
@@ -640,12 +647,18 @@ class MainWindow(QMainWindow):
 
     def toggle_overlay(self, enabled):
         self.overlay.enabled = enabled
-        if enabled and self.overlay.transform is None:
+        if (enabled or self.overlay.protection_enabled) and self.overlay.transform is None:
             screen = next((screen for screen in self.screen().virtualSiblings()
                            if screen_key(screen) == self.store.settings.overlay_screen), self.screen())
             saved = self.store.settings.overlay_adjustments.get(screen_key(screen), [0, 0, 1])
             self.overlay.configure(screen.geometry(), saved)
         self.overlay.refresh_visibility()
+
+    def toggle_protection_overlay(self, enabled):
+        self.overlay.protection_enabled = enabled
+        if not enabled:
+            self.overlay.protection_target = None
+        self.toggle_overlay(self.overlay.enabled)
 
     def refresh_idle_route_status(self):
         settings = self.store.settings

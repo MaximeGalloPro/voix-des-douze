@@ -30,7 +30,7 @@ def test_groups_are_distinguished_from_players_npcs_and_reset_per_map():
     sent = []
     safety.send(1, cell_coordinates(280), lambda: sent.append('safe'))
     assert sent == ['safe']
-    with pytest.raises(RuntimeError, match='moins de 2'):
+    with pytest.raises(RuntimeError, match='moins de 1'):
         safety.send(1, cell_coordinates(300), lambda: sent.append('unsafe'))
     full(safety, 2)
     safety.send(2, cell_coordinates(300), lambda: sent.append('new map'))
@@ -54,8 +54,8 @@ def test_movement_reserves_intermediate_cells_and_does_not_guess_animation_end(p
         safety.send(1, cell_coordinates(65), lambda: pytest.fail('old swept area expired'))
 
 
-@pytest.mark.parametrize('offset,blocked', [(0, True), (1, True), (1.999, True), (2, False), (3, False)])
-def test_two_case_boundary(offset, blocked):
+@pytest.mark.parametrize('offset,blocked', [(0, True), (0.999, True), (1, False), (2, False), (3, False)])
+def test_one_case_boundary(offset, blocked):
     safety = MonsterSafety()
     full(safety, actors=(actor(-2, 280),))
     x, y = cell_coordinates(280)
@@ -144,7 +144,7 @@ def test_player_feet_head_and_movement_are_protected_without_guessing_self_ident
     safety = MonsterSafety()
     full(safety, actors=(actor(12, 65, 3),))
     x, y = cell_coordinates(65)
-    for point in ((x, y), (x - 2, y + 2)):
+    for point in ((x, y), (x - 0.5, y + 0.5)):
         with pytest.raises(RuntimeError, match='Protection personnage'):
             safety.send(1, point, lambda: pytest.fail('player menu could open'))
     move(safety, 12, [65, 24])
@@ -205,9 +205,9 @@ def test_unsynchronized_actor_state_still_stops_idle(route):
 def test_last_skipped_resource_does_not_bypass_a_dangerous_exit(route, monkeypatch):
     w, c, clicks, errors, memory = route
     c.update(snapshot(1, cell=343))
-    full(c.monsters, actors=(actor(-2, 356),))
+    full(c.monsters, actors=(actor(-2, 343),))
     geometry = w.screen().geometry()
-    point = fullscreen_transform(geometry, [0, 0, 1]).map(cell_point(356))
+    point = fullscreen_transform(geometry, [0, 0, 1]).map(cell_point(343))
     monkeypatch.setattr('voix_des_douze.idle_route.sample_exit', lambda *args: point)
     c.toggle_idle()
     run_next(c)
@@ -271,3 +271,23 @@ def test_idle_skips_all_mob_and_uncertain_player_targets_then_leaves(route):
     run_next(c)
     assert c.idle and c.journey.expected == 3 and len(clicks) == 2
     assert errors == []
+
+
+@pytest.mark.parametrize('dx,dy,blocked', [
+    (0.5, 0, True), (-0.5, 0, True), (0.501, 0, False),
+    (0, -2, True), (0, -2.001, False),
+    (0, 0.5, True), (0, 0.501, False), (0.75, -4, False),
+])
+def test_reduced_player_envelope_boundaries(dx, dy, blocked):
+    safety = MonsterSafety()
+    full(safety, actors=(actor(12, 280, 3),))
+    u, v = cell_coordinates(280)
+    target = u + dx + dy / 2, v + dx - dy / 2
+    sent = []
+    if blocked:
+        with pytest.raises(RuntimeError, match='Protection personnage'):
+            safety.send(1, target, lambda: sent.append('clicked'))
+        assert sent == []
+    else:
+        safety.send(1, target, lambda: sent.append('clicked'))
+        assert sent == ['clicked']

@@ -193,3 +193,32 @@ def test_click_cross_uses_screen_origin_and_expires_without_stealing_input(app):
         overlay.timer.stop()
         overlay.click_timer.stop()
         overlay.close()
+
+
+def test_protection_debug_remains_visible_without_resources_but_hides_outside_game(app):
+    from voix_des_douze.monster_safety import MonsterSafety
+    overlay = ResourceOverlay()
+    overlay.pid = 123
+    overlay.foreground = lambda: 123
+    overlay.protection_safety = MonsterSafety()
+    try:
+        overlay.configure(QRect(0, 0, 900, 600), (0, 0, 1))
+        overlay.protection_enabled = True
+        overlay.refresh_visibility()
+        assert overlay.isVisible()
+        overlay.foreground = lambda: 456
+        overlay.refresh_visibility()
+        assert not overlay.isVisible()
+        overlay.foreground = lambda: 123
+        overlay.calibrating = True
+        overlay.refresh_visibility()
+        assert not overlay.isVisible()
+        overlay.calibrating = False
+        overlay.refresh_visibility()
+        assert overlay.isVisible()
+        overlay.protection_enabled = False
+        overlay.refresh_visibility()
+        assert not overlay.isVisible()
+    finally:
+        overlay.timer.stop()
+        overlay.close()

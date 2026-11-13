@@ -171,6 +171,7 @@ class FirstResourceClick(QObject):
         self.send = send if send is not None else MacClick(self.record)
         self.snapshot = None
         self.monsters = MonsterSafety()
+        window.overlay.protection_safety = self.monsters
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setTimerType(Qt.PreciseTimer)
@@ -420,6 +421,7 @@ class FirstResourceClick(QObject):
         self.cancel_debug_sequence()
         self.timer.stop()
         self.window.overlay.clear_click_target()
+        self.window.overlay.protection_target = None
         self.record("annulation", raison="ressources effacées")
         self.snapshot = None
         self.monsters.clear()
@@ -438,6 +440,7 @@ class FirstResourceClick(QObject):
                 self.stop_idle("changement de carte hors circuit")
             self.cancel_debug_sequence()
             self.window.overlay.clear_click_target()
+            self.window.overlay.protection_target = None
             self.timer.stop()
             if travelling:
                 self.idle_timeout.stop()
@@ -485,8 +488,13 @@ class FirstResourceClick(QObject):
             raise RuntimeError("Protection anti-combat : projection des cases invalide.")
         local = inverse.map(point - QPointF(geometry.topLeft()))
         coordinates = local.x() + local.y() / 2, local.x() - local.y() / 2
-        self.monsters.send(map_id, coordinates,
-                           lambda: self.send(self.window.overlay.pid, point, geometry))
+        try:
+            self.monsters.send(map_id, coordinates,
+                               lambda: self.send(self.window.overlay.pid, point, geometry))
+        except RuntimeError as exc:
+            self.window.overlay.show_protection_target(map_id, point, str(exc))
+            raise
+        self.window.overlay.show_protection_target(map_id, point, "clic envoyé")
 
     def click(self, manual=False, element_id=None):
         w = self.window

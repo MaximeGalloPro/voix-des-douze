@@ -12,6 +12,11 @@ def cell_coordinates(cell):
 _COORDINATES = tuple(cell_coordinates(cell) for cell in range(560))
 _CELLS = {point: cell for cell, point in enumerate(_COORDINATES)}
 
+MONSTER_DISTANCE = 1.0
+PLAYER_HALF_WIDTH = 0.5
+PLAYER_ABOVE = 2.0
+PLAYER_BELOW = 0.5
+
 
 def unpack_ids(body, number):
     result = []
@@ -159,16 +164,17 @@ class MonsterSafety:
             if not self.synchronized or self.map_id != map_id:
                 raise RuntimeError("Protection anti-combat : positions non synchronisées ; changez de carte pendant l’écoute.")
             x, y = coordinates
-            if any(abs(x - u) + abs(y - v) < 2 - 1e-9 for cell in self.reserved
+            if any(abs(x - u) + abs(y - v) < MONSTER_DISTANCE - 1e-9 for cell in self.reserved
                    for u, v in (_COORDINATES[cell],)):
-                raise MonsterProximity("Protection anti-combat : clic annulé à moins de 2 cases d’un groupe ou de son trajet observé sur cette carte.")
-            # Project a broad upright sprite envelope: one tile-width on each side,
-            # two tile-widths above the feet and half a tile-width below.
+                raise MonsterProximity("Protection anti-combat : clic annulé à moins de 1 case d’un groupe ou de son trajet observé sur cette carte.")
+            # Narrow sprite envelope: half a tile-width on each side and above
+            # the feet, one eighth below. Deliberately accepts more sprite risk.
             for cells in self.player_paths.values():
                 for cell in cells:
                     u, v = _COORDINATES[cell]
                     dx = (x + y - u - v) / 2
                     dy = x - y - u + v
-                    if abs(dx) <= 1 + 1e-9 and -8 - 1e-9 <= dy <= 2 + 1e-9:
+                    if (abs(dx) <= PLAYER_HALF_WIDTH + 1e-9
+                            and -PLAYER_ABOVE - 1e-9 <= dy <= PLAYER_BELOW + 1e-9):
                         raise PlayerOverlap("Protection personnage : cible trop proche du dessin d’un joueur ; clic non envoyé.")
             callback()

@@ -6,8 +6,11 @@ import sys
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen, QTransform
+from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPainterPath, QPen, QPolygonF, QTransform
 from PySide6.QtWidgets import QWidget
+
+from .monster_safety import (MONSTER_DISTANCE, PLAYER_HALF_WIDTH, PLAYER_ABOVE,
+                             PLAYER_BELOW, cell_coordinates)
 
 
 def cell_point(cell):
@@ -107,6 +110,10 @@ class ResourceOverlay(QWidget):
         self.pid = None
         self.foreground = ForegroundProcess()
         self.click_target = None
+        self.protection_enabled = False
+        self.protection_safety = None
+        self.protection_settings = None
+        self.protection_target = None
         self.click_timer = QTimer(self)
         self.click_timer.setSingleShot(True)
         self.click_timer.setInterval(3000)
@@ -146,16 +153,23 @@ class ResourceOverlay(QWidget):
         self.update()
         self.refresh_visibility()
 
+    def show_protection_target(self, map_id, point, result):
+        if self.protection_enabled:
+            self.protection_target = (map_id, point - QPointF(self.geometry().topLeft()), result)
+            self.update()
+
     def refresh_visibility(self):
         visible = bool(not self.calibrating and self.pid is not None
                        and self.foreground() == self.pid
                        and (self.click_target is not None or
-                            (self.enabled and self.transform and self.markers)))
+                            (self.transform and (self.protection_enabled or (self.enabled and self.markers)))))
         newly_visible = visible and not self.isVisible()
         self.setVisible(visible)
         if newly_visible:
             # Qt rewrites native window properties while showing the panel.
             fullscreen_spaces(self)
+        if self.protection_enabled:
+            self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -164,6 +178,10 @@ class ResourceOverlay(QWidget):
         font.setPointSize(16)
         font.setBold(True)
         painter.setFont(font)
+        if self.protection_enabled and self.transform:
+            painter.save()
+            self.paint_protections(painter)
+            painter.restore()
         for marker in self.markers if self.enabled else ():
             point = marker.point
             painter.setBrush(Qt.NoBrush)
@@ -185,6 +203,105 @@ class ResourceOverlay(QWidget):
                 painter.setPen(QPen(QColor(color), width))
                 painter.drawLine(point + QPointF(-14, 0), point + QPointF(14, 0))
                 painter.drawLine(point + QPointF(0, -14), point + QPointF(0, 14))
+
+    def paint_protections(self, painter):
+        safety = self.protection_safety
+        if safety is None:
+            return
+        with safety.lock:
+            map_id, synchronized = safety.map_id, safety.synchronized
+            reserved = tuple(safety.reserved)
+            groups = dict(safety.groups)
+            players = dict(safety.players)
+            paths = {entity: tuple(cells) for entity, cells in safety.player_paths.items()}
+        font = QFont()
+        font.setPointSize(11)
+        painter.setFont(font)
+        monster_zones, player_zones = QPainterPath(), QPainterPath()
+        monster_zones.setFillRule(Qt.WindingFill)
+        player_zones.setFillRule(Qt.WindingFill)
+        for cell in reserved:
+            u, v = cell_coordinates(cell)
+            vertices = ((u - MONSTER_DISTANCE, v), (u, v - MONSTER_DISTANCE),
+                        (u + MONSTER_DISTANCE, v), (u, v + MONSTER_DISTANCE))
+            polygon = QPolygonF([self.transform.map(QPointF((x + y) / 2, x - y))
+                                 for x, y in vertices])
+            monster_zones.addPolygon(polygon)
+            monster_zones.closeSubpath()
+        for cells in paths.values():
+            for cell in cells:
+                ground = cell_point(cell)
+                polygon = QPolygonF([self.transform.map(ground + QPointF(dx, dy))
+                    for dx, dy in ((-PLAYER_HALF_WIDTH, -PLAYER_ABOVE),
+                                   (PLAYER_HALF_WIDTH, -PLAYER_ABOVE),
+                                   (PLAYER_HALF_WIDTH, PLAYER_BELOW),
+                                   (-PLAYER_HALF_WIDTH, PLAYER_BELOW))])
+                player_zones.addPolygon(polygon)
+                player_zones.closeSubpath()
+        for path, color in ((monster_zones, QColor(255, 70, 55)), (player_zones, QColor(30, 210, 255))):
+            painter.setPen(QPen(color, 1))
+            fill = QColor(color)
+            fill.setAlpha(38)
+            painter.setBrush(fill)
+            painter.drawPath(path)
+        for category, actors, color in (("M", groups, QColor("#ff6655")), ("J", players, QColor("#65e3ff"))):
+            painter.setPen(color)
+            painter.setBrush(Qt.NoBrush)
+            for entity, cell in actors.items():
+                point = self.transform.map(cell_point(cell))
+                painter.drawEllipse(point, 4, 4)
+                painter.drawText(point + QPointF(6, -6), f"{category}{entity} · case {cell}")
+        if self.protection_settings is not None:
+            from .map_exits import exit_segment
+            settings = self.protection_settings()
+            profile = settings.map_exits.get(settings.map_exit_screen)
+            if (profile and settings.map_exit_screen == settings.overlay_screen
+                    and profile['size'] == [self.width(), self.height()]):
+                painter.setPen(QPen(QColor("#ffcf55"), 3, Qt.DashLine))
+                for direction in profile['points']:
+                    start, end = exit_segment(profile, direction)
+                    painter.drawLine(start, end)
+        global_cursor = QPointF(QCursor.pos())
+        local_cursor = global_cursor - QPointF(self.geometry().topLeft())
+        inverse, valid = self.transform.inverted()
+        detail = "Projection invalide"
+        cursor_result = "Position hors de l’écran"
+        if valid and self.rect().contains(local_cursor.toPoint()):
+            ground = inverse.map(local_cursor)
+            x, y = ground.x() + ground.y() / 2, ground.x() - ground.y() / 2
+            closest = min((abs(x - u) + abs(y - v) for u, v in
+                           (cell_coordinates(cell) for cell in reserved)), default=None)
+            distance = f"{closest:.2f}" if closest is not None else "aucun"
+            detail = f"Curseur grille ({x:.2f}, {y:.2f}) · distance monstre : {distance}"
+            if paths:
+                nearest = min((cell for cells in paths.values() for cell in cells),
+                              key=lambda cell: (self.transform.map(cell_point(cell)) - local_cursor).manhattanLength())
+                u, v = cell_coordinates(nearest)
+                detail += f" · joueur proche : dx={(x + y - u - v) / 2:.2f}, dy={x - y - u + v:.2f}"
+            try:
+                safety.send(map_id, (x, y), lambda: None)
+                cursor_result = "AUTORISÉ par les protections de position (focus/Accessibilité non évalués)"
+            except RuntimeError as exc:
+                cursor_result = "REFUSÉ : " + str(exc)
+        lines = [
+            f"DEBUG PROTECTIONS · carte {map_id} · {'synchronisée' if synchronized else 'NON SYNCHRONISÉE — aucun clic sûr'}",
+            f"Rouge : monstres d < {MONSTER_DISTANCE:g} case · cyan : joueurs |dx| ≤ {PLAYER_HALF_WIDTH:g}, dy ∈ [−{PLAYER_ABOVE:g}, {PLAYER_BELOW:g}]",
+            "Contours = zones réseau mémorisées · jaune = sorties calibrées · pas les contours réels des sprites",
+            detail, cursor_result,
+        ]
+        if self.protection_target is not None and self.protection_target[0] == map_id:
+            _, point, result = self.protection_target
+            painter.setPen(QPen(QColor("#ff4f85"), 3))
+            painter.drawLine(point + QPointF(-12, 0), point + QPointF(12, 0))
+            painter.drawLine(point + QPointF(0, -12), point + QPointF(0, 12))
+            lines.append("Dernière cible (croix rose) : " + result)
+        metrics = painter.fontMetrics()
+        width = min(self.width() - 32, max(metrics.horizontalAdvance(line) for line in lines) + 20)
+        painter.fillRect(16, 66, width, metrics.height() * len(lines) + 16, QColor(0, 0, 0, 215))
+        painter.setPen(QColor("#ffffff"))
+        for index, line in enumerate(lines):
+            painter.drawText(26, 74 + metrics.ascent() + index * metrics.height(),
+                             metrics.elidedText(line, Qt.ElideRight, width - 20))
 
 
 class AdjustmentOverlay(QWidget):
