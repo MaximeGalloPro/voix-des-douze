@@ -1,4 +1,4 @@
-"""Opt-in arrival click and cancellable debug pass; never controls travel."""
+"""Opt-in harvesting and ordered idle travel, using guarded macOS clicks."""
 from __future__ import annotations
 
 from collections import deque
@@ -18,6 +18,7 @@ from PySide6.QtCore import QObject, QPointF, Qt, QTimer, Signal
 from .overlay import ForegroundProcess, cell_point, fullscreen_transform, screen_key
 from .idle_hint import IdleHint
 from .settings import data_directory
+from .idle_route import IdleJourney
 
 
 def idle_nearest(cells, origin):
@@ -191,8 +192,10 @@ class FirstResourceClick(QObject):
         self.idle_timeout.setInterval(10000)
         self.idle_timeout.timeout.connect(self.idle_expired)
         self.idle_hint = IdleHint(window)
+        self.journey = IdleJourney(self)
 
     def stop_idle(self):
+        self.journey.stop()
         self.idle = False
         self.idle_hint.set_active(False)
         self.idle_timer.stop()
@@ -211,6 +214,15 @@ class FirstResourceClick(QObject):
                 or w.overlay.pid is None or w.overlay.foreground() != w.overlay.pid):
             w.show_error("Idle : synchronisez une carte et gardez Dofus au premier plan pendant l’écoute.")
             return
+        if w.overlay.calibrating:
+            w.show_error("Idle : terminez le réglage des repères ou des sorties.")
+            return
+        try:
+            self.journey.start(self.snapshot)
+        except ValueError as exc:
+            self.journey.stop()
+            w.show_error(f"Circuit idle : {exc}")
+            return
         self.timer.stop()
         self.cancel_debug_sequence()
         self.idle = True
@@ -218,19 +230,33 @@ class FirstResourceClick(QObject):
         now = time.monotonic()
         self.idle_pending = {
             r.element_id: now + random.randint(800, 1800) / 1000
-            for r in self.snapshot.resources if r.harvestable}
-        self.idle_changed.emit("Idle actif · une cible à la fois · 800–1 800 ms")
-        if self.idle_pending:
-            self.idle_timer.start(0)
+            for r in self.snapshot.resources if r.harvestable
+            and (not self.journey.active or self.journey.at_stop)}
+        self.idle_changed.emit("Idle actif · circuit de cartes" if self.journey.active
+                               else "Idle actif · une cible à la fois · 800–1 800 ms")
+        if self.idle_pending or self.journey.active:
+            self.idle_timer.start(random.randint(800, 1800) if self.journey.active else 0)
 
     def idle_next(self):
-        if not self.idle or self.idle_target is not None or not self.idle_pending:
+        if not self.idle or self.idle_target is not None:
+            return
+        if self.journey.active:
+            if not self.journey.check() or self.journey.expected is not None:
+                return
+            if not self.journey.at_stop:
+                self.journey.step()
+                return
+        if not self.idle_pending:
+            if self.journey.active and not any(r.harvestable or r.state == 2 for r in self.snapshot.resources):
+                self.journey.step()
             return
         cells = {r.element_id: r.cell for r in self.snapshot.resources
                  if r.element_id in self.idle_pending and r.harvestable
                  and 0 <= r.cell < 560}
         if not cells:
             self.idle_pending.clear()
+            if self.journey.active:
+                self.journey.fail("Ressources disponibles mais cases non projetables ; vérifiez les repères.")
             return
         element_id = idle_nearest(cells, self.idle_origin)
         remaining = self.idle_pending[element_id] - time.monotonic()
@@ -246,6 +272,9 @@ class FirstResourceClick(QObject):
 
     def idle_expired(self):
         if not self.idle or self.idle_target is None:
+            return
+        if self.journey.active:
+            self.journey.fail("Récolte non confirmée après 10 s ; départ annulé.")
             return
         self.idle_target = None
         self.idle_next()
@@ -333,15 +362,29 @@ class FirstResourceClick(QObject):
             {"élément": r.element_id, "case": r.cell, "état": r.state, "récoltable": r.harvestable}
             for r in snapshot.resources])
         if previous is None or previous.map_id != snapshot.map_id:
-            self.stop_idle()
+            was_journey = self.idle and self.journey.active
+            travelling = was_journey and self.journey.arrive(snapshot.map_id)
+            if not travelling:
+                self.stop_idle()
             self.cancel_debug_sequence()
             self.window.overlay.clear_click_target()
             self.timer.stop()
-            # First synchronization is not an arrival: it can occur mid-action.
-            if previous is not None and self.window.first_resource.isChecked():
+            if travelling:
+                self.idle_timeout.stop()
+                self.idle_target = None
+                self.idle_origin = None
+                now = time.monotonic()
+                self.idle_pending = {
+                    r.element_id: now + random.randint(800, 1800) / 1000
+                    for r in snapshot.resources if r.harvestable and self.journey.at_stop}
+                self.idle_timer.start(random.randint(800, 1800))
+            # First sync is silent; circuit owns arrivals, including failed ones.
+            elif not was_journey and previous is not None and self.window.first_resource.isChecked():
                 self.timer.start(random.randint(700, 850))
                 self.record("arrivée programmée", délai_ms=self.timer.interval())
         elif self.idle:
+            if self.journey.active and (self.journey.expected is not None or not self.journey.at_stop):
+                return
             before = {r.element_id for r in previous.resources if r.harvestable}
             available = {r.element_id for r in snapshot.resources if r.harvestable}
             if self.idle_target is not None:
@@ -356,8 +399,8 @@ class FirstResourceClick(QObject):
             now = time.monotonic()
             for element_id in (available - before) - {self.idle_target}:
                 self.idle_pending[element_id] = now + random.randint(800, 1800) / 1000
-            if self.idle_pending and self.idle_target is None:
-                self.idle_timer.start(0)
+            if self.idle_target is None and (self.idle_pending or self.journey.active):
+                self.idle_timer.start(0 if self.idle_pending else random.randint(800, 1800))
 
     def click(self, manual=False, element_id=None):
         w = self.window

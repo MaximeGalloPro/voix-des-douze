@@ -22,6 +22,7 @@ from .overlay import AdjustmentOverlay, ResourceOverlay, screen_key
 from .resource_click import FirstResourceClick
 from .compass import Compass, CompassSettings
 from .map_exits import ExitCalibration
+from .idle_route import RouteEditor
 
 
 class Events(QObject):
@@ -205,6 +206,14 @@ class MainWindow(QMainWindow):
         exit_layout.addWidget(self.map_exit_status)
         self.refresh_map_exit_status()
         map_layout.addWidget(exits)
+        circuit = QGroupBox("Circuit de cartes · idle")
+        circuit_layout = QVBoxLayout(circuit)
+        self.idle_route_status = QLabel()
+        self.idle_route_status.setWordWrap(True)
+        circuit_layout.addWidget(self.idle_route_status)
+        self.button(circuit_layout, "Configurer le circuit idle…", self.configure_idle_route)
+        self.refresh_idle_route_status()
+        map_layout.addWidget(circuit)
         map_layout.addWidget(resource_box)
         map_layout.addStretch()
         voice_controls = QHBoxLayout()
@@ -606,6 +615,21 @@ class MainWindow(QMainWindow):
             self.overlay.configure(screen.geometry(), saved)
         self.overlay.refresh_visibility()
 
+    def refresh_idle_route_status(self):
+        settings = self.store.settings
+        route = settings.idle_routes.get(settings.compass_profile, {})
+        self.idle_route_status.setText(
+            f"Profil : {settings.compass_profile or 'à choisir dans Boussole'} · "
+            + (f"Circuit actif · {len(route['maps'])} étapes ordonnées · retour en boucle"
+               if route.get("enabled") else "Circuit désactivé · idle reste sur la carte courante"))
+
+    def configure_idle_route(self):
+        self.resource_click.stop_idle()
+        self.resource_click.timer.stop()
+        self.resource_click.cancel_debug_sequence()
+        RouteEditor(self).exec()
+        self.refresh_idle_route_status()
+
     def refresh_map_exit_status(self):
         settings = self.store.settings
         profile = settings.map_exits.get(settings.map_exit_screen)
@@ -713,6 +737,9 @@ class MainWindow(QMainWindow):
         screen = screen_combo.currentData()
         saved = self.store.settings.overlay_adjustments.get(screen_key(screen), [0, 0, 1])
         self.overlay.calibrating = True
+        self.resource_click.stop_idle()
+        self.resource_click.timer.stop()
+        self.resource_click.cancel_debug_sequence()
         self.overlay.hide()
         self.adjustment = AdjustmentOverlay(
             screen, self.overlay.resources, saved, debug=debug_checkbox.isChecked())
@@ -819,9 +846,13 @@ class MainWindow(QMainWindow):
     def idle_state_changed(self, text):
         self.idle_status.setText(text)
         if not self.store.settings.compass_enabled:
-            self.compass.memory.reset_session()
-            if self.resource_click.idle and self.resource_click.snapshot is not None:
-                self.compass.memory.observe(self.resource_click.snapshot)
+            memory = self.compass.memory
+            snapshot = self.resource_click.snapshot
+            if not self.resource_click.idle:
+                memory.reset_session()
+            elif snapshot is not None and memory.current != snapshot.map_id:
+                memory.reset_session()
+                memory.observe(snapshot)
 
     def toggle_idle_shortcut(self, enabled):
         self.store.settings.idle_shortcut_enabled = enabled

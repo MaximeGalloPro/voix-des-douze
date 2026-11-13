@@ -4,13 +4,15 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtCore import QEvent, QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QWidget
 from shiboken6 import delete
 
 from voix_des_douze.compass import Compass, CompassSettings
 from voix_des_douze.settings import Store
 from voix_des_douze.harvest import Resource, ResourceSnapshot
 from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsSimpleTextItem
+from voix_des_douze.resource_click import FirstResourceClick
+from voix_des_douze.ui import MainWindow
 
 
 @pytest.fixture(scope="session")
@@ -29,11 +31,15 @@ def make_compass(compass_app, tmp_path):
         window.overlay = SimpleNamespace(pid=123, foreground=lambda: 123, isVisible=lambda: False)
         window.errors = []
         window.show_error = window.errors.append
+        window.resource_click = FirstResourceClick(window, send=lambda *args: None)
+        window.idle_route_status = QLabel(window)
+        window.refresh_idle_route_status = lambda: MainWindow.refresh_idle_route_status(window)
         compass = Compass(window)
         windows.append((window, compass))
         return window, compass
     yield make
     for window, compass in reversed(windows):
+        window.resource_click.stop_idle()
         compass.close()
         delete(compass.panel)
         delete(window)

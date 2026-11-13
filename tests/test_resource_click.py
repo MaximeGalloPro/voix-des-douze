@@ -10,6 +10,7 @@ from shiboken6 import delete
 from voix_des_douze.harvest import Resource, ResourceSnapshot
 from voix_des_douze.overlay import ResourceOverlay, screen_key
 from voix_des_douze.resource_click import FirstResourceClick
+from voix_des_douze.settings import Settings
 
 
 @pytest.fixture(scope="session")
@@ -32,8 +33,8 @@ def assist(click_app):
     w.show_error = errors.append
     screen = w.screen()
     key = screen_key(screen)
-    w.store = SimpleNamespace(settings=SimpleNamespace(
-        overlay_screen=key, overlay_adjustments={key: [0, 0, 1]}, idle_hint_positions={}))
+    w.store = SimpleNamespace(settings=Settings(
+        overlay_screen=key, overlay_adjustments={key: [0, 0, 1]}))
     controller = FirstResourceClick(w, lambda *args: clicks.append(args))
     controller.timer.setInterval(10)
     yield w, controller, clicks, errors

@@ -47,6 +47,7 @@ class Settings:
     overlay_adjustments: dict[str, list[float]] = field(default_factory=dict)
     map_exit_screen: str = ""
     map_exits: dict[str, dict] = field(default_factory=dict)
+    idle_routes: dict[str, dict] = field(default_factory=dict)
 
 
 class Store:
@@ -92,6 +93,16 @@ class Store:
                                    and all(type(v) is int for v in pos)
                                    for key, pos in s.idle_hint_positions.items())):
                     raise ValueError("Positions du badge IDLE invalides")
+                if (not isinstance(s.idle_routes, dict)
+                        or not all(isinstance(key, str) and key.strip()
+                                   and isinstance(route, dict) and set(route) == {"enabled", "maps"}
+                                   and type(route["enabled"]) is bool
+                                   and isinstance(route["maps"], list)
+                                   and all(type(m) is int and m > 0 for m in route["maps"])
+                                   and len(set(route["maps"])) == len(route["maps"])
+                                   and (not route["enabled"] or len(route["maps"]) >= 2)
+                                   for key, route in s.idle_routes.items())):
+                    raise ValueError("Circuit de cartes idle invalide")
                 if not isinstance(s.map_exit_screen, str) or not isinstance(s.map_exits, dict):
                     raise ValueError("Configuration des sorties de carte invalide")
                 for key, profile in s.map_exits.items():

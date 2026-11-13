@@ -211,7 +211,7 @@ class Compass:
             self.memory.reset_session()
 
     def transition(self, pair):
-        if self.window.store.settings.compass_enabled:
+        if self.window.store.settings.compass_enabled or self.window.resource_click.idle:
             self.memory.observe_transition(*pair)
 
     def timing(self, event):
@@ -478,6 +478,7 @@ class CompassSettings(QWidget):
             return
         settings = self.compass.window.store.settings
         if profile != settings.compass_profile:
+            self.compass.window.resource_click.stop_idle()
             self.compass.cancel_calibration()
             settings.compass_profile = profile
             self.compass.memory.select_profile(profile)
@@ -487,6 +488,7 @@ class CompassSettings(QWidget):
             if self.profile.findText(profile, Qt.MatchExactly) == -1:
                 self.profile.addItem(profile)
             self.profile.setCurrentText(profile)
+            self.compass.window.refresh_idle_route_status()
             self.load_types()
 
     def load_types(self):

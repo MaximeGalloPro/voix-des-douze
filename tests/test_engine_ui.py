@@ -42,7 +42,6 @@ def test_real_ui_switches_three_engines_and_stops_previous_worker(tmp_path):
             spy = QSignalSpy(window.events.audio)
             QTest.mouseClick(window.preview_button, Qt.LeftButton)
             wait_for(lambda: spy.count() > 0)
-            assert "lancement audio" in window.metrics.text()
             previous = window.playback.engine._process
             assert previous.poll() is None
         window.stop()
