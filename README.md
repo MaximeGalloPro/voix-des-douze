@@ -14,7 +14,7 @@ Prérequis : macOS 14+, **Python 3.13**, et Python système des Command Line Too
 4. **Changer de carte puis revenir** pour synchroniser les PNJ, puis ouvrir un dialogue. La première réplique et les suivantes sont affichées et lues automatiquement. Répondre invalide immédiatement l’ancienne lecture.
 5. **Arrêter** coupe la capture et la voix ; fermer l’application fait de même. Aucun service permanent ni démarrage automatique avec le Mac.
 
-La fenêtre principale comporte trois onglets, dans l’ordre : **Boussole** (profil, activation, suivi des ressources et priorités), **Carte** (ressources présentes, son, repères et assistance au clic) et **Voix** (dialogue PNJ, moteurs, voix, lecture automatique, volume et vitesse). Le bloc **Client Dofus à suivre**, les commandes **Démarrer l’écoute / Suspendre / Arrêter** et l’état de l’écoute restent visibles au-dessus des trois onglets. Les réglages de boussole sont intégrés à cette fenêtre, sans dialogue séparé.
+La fenêtre principale comporte trois onglets, dans l’ordre : **Carte** (sorties de carte, ressources présentes, son, repères et assistance au clic), **Boussole** (profil, activation, suivi des ressources et priorités) et **Voix** (dialogue PNJ, moteurs, voix, lecture automatique, volume et vitesse). Le bloc **Client Dofus à suivre**, les commandes **Démarrer l’écoute / Suspendre / Arrêter** et l’état de l’écoute restent visibles au-dessus des trois onglets. Les réglages de boussole sont intégrés à cette fenêtre, sans dialogue séparé.
 
 ```sh
 ./Installer.command
@@ -24,6 +24,14 @@ La fenêtre principale comporte trois onglets, dans l’ordre : **Boussole** (pr
 ```
 
 Après préparation, l’application ne télécharge rien pour démarrer l’écoute ou produire la voix. Le jeu lui-même nécessite sa connexion habituelle. Aucun historique de paquets ou de dialogues n’est enregistré par l’application et rien n’est envoyé à un serveur communautaire.
+
+### Sorties de carte : réglage des zones de clic
+
+Dans **Carte**, premier onglet, **Régler les sorties de carte…** ouvre le choix de l’écran puis un panneau transparent, comme le réglage des repères. Affichez Dofus plein écran sur l’écran choisi et placez les sorties dans l’ordre **Gauche → Droite → Haut → Bas** en cliquant leur point central. Les boutons de direction (ou les flèches clavier) permettent de reprendre individuellement un point. Les clics sont interceptés par le panneau : **aucun clic ni déplacement n’est envoyé au jeu** pendant ce réglage.
+
+Un segment et des exemples de positions aléatoires matérialisent une variation d’environ **3 cm de chaque côté du point** : **verticale pour gauche/droite**, **horizontale pour haut/bas**. L’autre coordonnée reste fixe ; la zone est tronquée aux bords de l’écran. La conversion en pixels logiques utilise la taille physique déclarée par l’écran (ou les DPI logiques si elle manque) : les centimètres restent approximatifs, notamment avec les moniteurs dont les dimensions sont mal déclarées. Cette calibration n’utilise pas les repères de ressources.
+
+**Enregistrer les 4 sorties** ou **Entrée** mémorise les points et les amplitudes dans les réglages locaux, par écran et définition. Il faut définir les quatre sorties avant de valider. **Annuler** ou **Échap** conserve le réglage précédent. Rouvrir le même bouton recharge les points pour les modifier ; un changement de définition impose de les placer à nouveau. Le début du réglage coupe idle et annule les clics de récolte en attente ; fermer le panneau ne réactive pas idle. Cette étape prépare les zones de sortie : elle ne lance pas encore de trajet entre cartes.
 
 ### Ressources : alerte à l’arrivée et debug
 

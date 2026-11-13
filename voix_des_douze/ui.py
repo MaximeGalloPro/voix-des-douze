@@ -21,6 +21,7 @@ from .alerts import ResourceAlert
 from .overlay import AdjustmentOverlay, ResourceOverlay, screen_key
 from .resource_click import FirstResourceClick
 from .compass import Compass, CompassSettings
+from .map_exits import ExitCalibration
 
 
 class Events(QObject):
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
         self.resource_alert = ResourceAlert(self, self.show_error)
         self.overlay = ResourceOverlay()
         self.adjustment = None
+        self.exit_calibration = None
         self.resource_click = FirstResourceClick(self)
         self.shutting_down = False
         self.build_ui()
@@ -121,7 +123,7 @@ class MainWindow(QMainWindow):
         self.tabs.setAccessibleName("Gestion de la boussole, de la carte et des voix")
         layout.addWidget(self.tabs, 1)
         page_layouts = []
-        for label in ("Boussole", "Carte", "Voix"):
+        for label in ("Carte", "Boussole", "Voix"):
             page = QWidget()
             page.setObjectName("main_content")
             page_layout = QVBoxLayout(page)
@@ -130,7 +132,7 @@ class MainWindow(QMainWindow):
             scroll.setWidgetResizable(True)
             scroll.setWidget(page)
             self.tabs.addTab(scroll, label)
-        self.compass_layout, map_layout, voices_layout = page_layouts
+        map_layout, self.compass_layout, voices_layout = page_layouts
         resource_box = QGroupBox("Ressources de la carte · debug réseau")
         resource_layout = QVBoxLayout(resource_box)
         self.resource_summary = QLabel("En attente de la première carte · aucun comptage disponible")
@@ -189,6 +191,20 @@ class MainWindow(QMainWindow):
         self.idle_measurement = QLabel("Repousse : en attente d’un cycle complet observé.")
         self.idle_measurement.setWordWrap(True)
         resource_layout.addWidget(self.idle_measurement)
+        exits = QGroupBox("Changement de carte · zones de clic")
+        exit_layout = QVBoxLayout(exits)
+        exit_help = QLabel(
+            "Définissez les sorties gauche, droite, haut et bas sur l’écran Dofus. "
+            "Variation verticale à gauche/droite, horizontale en haut/bas : environ ±3 cm. "
+            "Ce réglage ne déclenche aucun déplacement.")
+        exit_help.setWordWrap(True)
+        exit_layout.addWidget(exit_help)
+        self.button(exit_layout, "Régler les sorties de carte…", self.configure_map_exits)
+        self.map_exit_status = QLabel()
+        self.map_exit_status.setWordWrap(True)
+        exit_layout.addWidget(self.map_exit_status)
+        self.refresh_map_exit_status()
+        map_layout.addWidget(exits)
         map_layout.addWidget(resource_box)
         map_layout.addStretch()
         voice_controls = QHBoxLayout()
@@ -590,8 +606,82 @@ class MainWindow(QMainWindow):
             self.overlay.configure(screen.geometry(), saved)
         self.overlay.refresh_visibility()
 
+    def refresh_map_exit_status(self):
+        settings = self.store.settings
+        profile = settings.map_exits.get(settings.map_exit_screen)
+        self.map_exit_status.setText(
+            f"4 sorties enregistrées · écran {settings.map_exit_screen} · "
+            f"{profile['size'][0]} × {profile['size'][1]} · modifiables à tout moment"
+            if profile else "Aucune sortie enregistrée")
+
+    def configure_map_exits(self):
+        if self.adjustment is not None or self.exit_calibration is not None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Choisir l’écran des sorties de carte")
+        layout = QVBoxLayout(dialog)
+        help_text = QLabel(
+            "Choisissez l’écran Dofus puis affichez le jeu en plein écran. "
+            "Cliquez les quatre points de sortie dans le panneau transparent. "
+            "Les segments montrent la variation aléatoire, limitée aux bords de l’écran. "
+            "La mesure de 3 cm reste approximative et dépend des informations de l’écran.")
+        help_text.setWordWrap(True)
+        layout.addWidget(help_text)
+        screens = QComboBox()
+        selected = self.store.settings.map_exit_screen or self.store.settings.overlay_screen
+        for index, screen in enumerate(self.screen().virtualSiblings()):
+            screens.addItem(f"Écran {index + 1} · {screen.name()}", screen)
+            if screen_key(screen) == selected or (not selected and screen == self.screen()):
+                screens.setCurrentIndex(index)
+        layout.addWidget(screens)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Placer les sorties")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if not dialog.exec():
+            return
+        screen = screens.currentData()
+        self.resource_click.stop_idle()
+        self.resource_click.timer.stop()
+        self.resource_click.cancel_debug_sequence()
+        self.overlay.calibrating = True
+        self.overlay.hide()
+        saved = self.store.settings.map_exits.get(screen_key(screen))
+        self.exit_calibration = ExitCalibration(screen, saved)
+        self.exit_calibration.finished.connect(
+            lambda result: self.finish_map_exits(screen, result))
+        self.hide()
+        self.exit_calibration.show()
+        self.exit_calibration.setFocus()
+
+    def finish_map_exits(self, screen, result):
+        self.exit_calibration = None
+        self.overlay.calibrating = False
+        if not self.shutting_down:
+            self.show()
+        self.overlay.refresh_visibility()
+        if result is None:
+            return
+        key = screen_key(screen)
+        settings = self.store.settings
+        previous_screen = settings.map_exit_screen
+        previous = settings.map_exits.get(key)
+        settings.map_exit_screen = key
+        settings.map_exits[key] = result
+        try:
+            self.store.save()
+        except OSError as exc:
+            settings.map_exit_screen = previous_screen
+            if previous is None:
+                settings.map_exits.pop(key)
+            else:
+                settings.map_exits[key] = previous
+            self.show_error(f"Sorties de carte non enregistrées : {exc}")
+        self.refresh_map_exit_status()
+
     def configure_overlay(self):
-        if self.adjustment is not None:
+        if self.adjustment is not None or self.exit_calibration is not None:
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("Régler les repères plein écran")
@@ -809,6 +899,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.shutting_down = True
+        if self.exit_calibration is not None:
+            self.exit_calibration.close()
         if self.adjustment is not None:
             self.adjustment.finished.disconnect()
             self.adjustment.close()

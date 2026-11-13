@@ -45,6 +45,8 @@ class Settings:
         "toggle": "F6", "stop": "F7", "replay": "F8", "idle": "="})
     overlay_screen: str = ""
     overlay_adjustments: dict[str, list[float]] = field(default_factory=dict)
+    map_exit_screen: str = ""
+    map_exits: dict[str, dict] = field(default_factory=dict)
 
 
 class Store:
@@ -90,6 +92,21 @@ class Store:
                                    and all(type(v) is int for v in pos)
                                    for key, pos in s.idle_hint_positions.items())):
                     raise ValueError("Positions du badge IDLE invalides")
+                if not isinstance(s.map_exit_screen, str) or not isinstance(s.map_exits, dict):
+                    raise ValueError("Configuration des sorties de carte invalide")
+                for key, profile in s.map_exits.items():
+                    if (not isinstance(key, str) or not isinstance(profile, dict)
+                            or set(profile) != {"size", "radius", "points"}
+                            or not all(isinstance(profile[name], list) and len(profile[name]) == 2
+                                       and all(type(v) is int and v > 0 for v in profile[name])
+                                       for name in ("size", "radius"))
+                            or not isinstance(profile["points"], dict)
+                            or set(profile["points"]) != {"left", "right", "up", "down"}
+                            or not all(isinstance(point, list) and len(point) == 2
+                                       and all(type(v) is int and 0 <= v < limit
+                                               for v, limit in zip(point, profile["size"]))
+                                       for point in profile["points"].values())):
+                        raise ValueError("Points ou zones de sortie de carte invalides")
                 for adjustment in s.overlay_adjustments.values():
                     if (not isinstance(adjustment, list) or len(adjustment) != 3
                             or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in adjustment)
