@@ -1,7 +1,7 @@
 """Ordered idle stops, routed only through directed, observed walking passages."""
 from collections import deque
 
-from PySide6.QtCore import QObject, QPointF, QTimer
+from PySide6.QtCore import QObject, QPointF, Qt, QTimer
 from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
                               QLabel, QLineEdit, QListWidget, QPushButton, QVBoxLayout)
 
@@ -64,18 +64,20 @@ class IdleJourney(QObject):
         self.owner = owner
         self.active = False
         self.expected = None
+        self.exit_attempts = 0
         self.path = deque()
         self.timeout = QTimer(self)
         self.timeout.setSingleShot(True)
-        self.timeout.setInterval(20000)
-        self.timeout.timeout.connect(lambda: self.fail('Changement de carte non confirmé après 20 s ; aucun nouveau clic envoyé.'))
+        self.timeout.setTimerType(Qt.PreciseTimer)
+        self.timeout.setInterval(15000)
+        self.timeout.timeout.connect(self.exit_expired)
         self.guard = QTimer(self)
         self.guard.setInterval(250)
         self.guard.timeout.connect(self.check)
         self.retry = QTimer(self)
         self.retry.setSingleShot(True)
         self.retry.setInterval(500)
-        self.retry.timeout.connect(self.step)
+        self.retry.timeout.connect(lambda: self.step(resend=True))
 
     @property
     def at_stop(self):
@@ -84,6 +86,7 @@ class IdleJourney(QObject):
     def stop(self):
         self.active = False
         self.expected = None
+        self.exit_attempts = 0
         self.path.clear()
         self.timeout.stop()
         self.guard.stop()
@@ -143,8 +146,19 @@ class IdleJourney(QObject):
             return False
         return True
 
-    def step(self):
-        if not self.check() or self.expected is not None or self.retry.isActive():
+    def exit_expired(self):
+        self.timeout.stop()
+        if not self.check() or self.expected is None:
+            return
+        if self.exit_attempts >= 3:
+            self.fail('Changement de carte non confirmé après 3 clics espacés de 15 s ; arrêt du circuit.')
+            return
+        self.owner.record("sortie non confirmée", destination=self.expected,
+                          tentatives_envoyées=self.exit_attempts)
+        self.step(resend=True)
+
+    def step(self, resend=False):
+        if not self.check() or (self.expected is not None and not resend) or self.retry.isActive():
             return
         current = self.owner.snapshot.map_id
         if not self.path:
@@ -160,13 +174,14 @@ class IdleJourney(QObject):
             screen, profile = self.exit_screen()
             geometry = screen.geometry()
             point = sample_exit(profile, direction) + QPointF(geometry.topLeft())
-            # Mark in flight before posting; no further action until full map confirmation.
+            # Mark in flight before posting; retries keep the same unconfirmed hop.
             self.expected = target
             self.owner.record("sortie tentée", origine=current, destination=target,
                               direction=direction, x=point.x(), y=point.y())
             self.owner.guarded_send(current, point, geometry)
         except (MonsterProximity, PlayerOverlap) as exc:
-            self.expected = None
+            if not self.exit_attempts:
+                self.expected = None
             self.owner.record("sortie en attente", origine=current, destination=target,
                               raison=str(exc), réévaluation_ms=self.retry.interval())
             self.owner.idle_changed.emit(f'Idle · sortie {DIRECTIONS[direction]} occupée · attente obstacle')
@@ -175,12 +190,13 @@ class IdleJourney(QObject):
         except (ValueError, RuntimeError) as exc:
             self.fail(str(exc))
             return
+        self.exit_attempts += 1
         self.timeout.start()
         self.owner.record("sortie envoyée", origine=current, destination=target,
-                          délai_confirmation_ms=self.timeout.interval())
+                          délai_confirmation_ms=self.timeout.interval(), tentative=self.exit_attempts)
         self.owner.idle_changed.emit(
             f'Idle · étape {self.index + 1}/{len(self.stops)} · sortie {DIRECTIONS[direction]} · '
-            f'attente carte {target}')
+            f'attente carte {target} · tentative {self.exit_attempts}/3')
 
     def arrive(self, map_id):
         if not self.check():
@@ -191,7 +207,9 @@ class IdleJourney(QObject):
         self.owner.record("arrivée confirmée", carte=map_id)
         self.path.popleft()
         self.expected = None
+        self.exit_attempts = 0
         self.timeout.stop()
+        self.retry.stop()
         self.owner.idle_changed.emit(
             f'Idle · étape {self.index + 1}/{len(self.stops)} · '
             + ('récolte' if self.at_stop else 'traversée'))

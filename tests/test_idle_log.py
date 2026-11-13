@@ -23,6 +23,8 @@ def test_stop_preserves_inflight_exit_and_cause_before_state_is_cleared(route, f
         c.journey.guard.timeout.emit()
     elif failure == 'exit_timeout':
         c.journey.timeout.timeout.emit()
+        c.journey.timeout.timeout.emit()
+        c.journey.timeout.timeout.emit()
     elif failure == 'unexpected':
         c.update(empty(4))
     else:
@@ -38,7 +40,9 @@ def test_stop_preserves_inflight_exit_and_cause_before_state_is_cleared(route, f
         assert stop['contexte']['pid_premier_plan'] == 456
         assert '456' in stop['détails']['raison']
     elif failure == 'exit_timeout':
-        assert '20' in stop['détails']['raison']
+        sent = [row['détails'] for row in entries if row['événement'] == 'sortie envoyée']
+        assert [attempt['tentative'] for attempt in sent] == [1, 2, 3]
+        assert all(attempt['délai_confirmation_ms'] == 15000 for attempt in sent)
     elif failure == 'unexpected':
         assert stop['contexte']['carte'] == 4
         assert '4' in stop['détails']['raison'] and '2' in stop['détails']['raison']

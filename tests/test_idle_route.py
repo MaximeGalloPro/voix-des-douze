@@ -130,16 +130,14 @@ def test_outside_circuit_stays_local_even_with_a_path_to_the_run(route, start_ma
     assert c.journey.expected is None
     assert errors == []
 
-@pytest.mark.parametrize('failure', ['timeout', 'unexpected', 'focus', 'pause', 'clear', 'calibration', 'profile', 'shortcut'])
-def test_inflight_exit_stops_without_retry_or_arrival_click(route, failure):
+@pytest.mark.parametrize('failure', ['unexpected', 'focus', 'pause', 'clear', 'calibration', 'profile', 'shortcut'])
+def test_inflight_exit_stops_on_interruption_without_arrival_click(route, failure):
     w, c, clicks, errors, memory = route
     c.update(empty(1))
     c.toggle_idle()
     run_next(c)
     assert c.journey.expected == 2
-    if failure == 'timeout':
-        c.journey.timeout.timeout.emit()
-    elif failure == 'unexpected':
+    if failure == 'unexpected':
         c.update(empty(4))
     elif failure == 'clear':
         c.clear()
@@ -162,6 +160,52 @@ def test_inflight_exit_stops_without_retry_or_arrival_click(route, failure):
     run_next(c)
     assert len(clicks) == 1
 
+
+
+def test_unconfirmed_exit_retries_twice_then_stops(route):
+    w, c, clicks, errors, memory = route
+    c.update(empty(1))
+    c.toggle_idle()
+    run_next(c)
+    for count in (2, 3):
+        c.journey.timeout.timeout.emit()
+        assert c.idle and c.journey.expected == 2
+        assert len(clicks) == count
+        assert list(c.journey.path) == [2, 3, 4]
+    c.journey.timeout.timeout.emit()
+    assert not c.idle
+    assert len(clicks) == 3
+    assert errors
+
+
+def test_arrival_after_retry_cancels_timeout_and_resets_next_hop(route):
+    w, c, clicks, errors, memory = route
+    c.update(empty(1))
+    c.toggle_idle()
+    run_next(c)
+    c.journey.timeout.timeout.emit()
+    c.update(empty(2))
+    assert not c.journey.timeout.isActive()
+    assert c.journey.exit_attempts == 0
+    run_next(c)
+    assert c.journey.expected == 3
+    assert c.journey.exit_attempts == 1
+    assert len(clicks) == 3 and errors == []
+
+
+def test_blocked_resend_preserves_late_arrival_and_click_budget(route):
+    from voix_des_douze.monster_safety import PlayerOverlap
+    w, c, clicks, errors, memory = route
+    c.update(empty(1))
+    c.toggle_idle()
+    run_next(c)
+    c.guarded_send = lambda *args: (_ for _ in ()).throw(PlayerOverlap('occupé'))
+    c.journey.timeout.timeout.emit()
+    assert len(clicks) == 1 and c.journey.exit_attempts == 1
+    assert c.journey.retry.isActive() and c.journey.expected == 2
+    c.update(empty(2))
+    assert c.idle and not c.journey.retry.isActive()
+    assert c.journey.expected is None and errors == []
 
 @pytest.mark.parametrize('failure', ['missing_return', 'other_profile', 'size', 'other_screen', 'no_stops'])
 def test_circuit_start_rejects_unreachable_or_uncalibrated_routes(route, failure):
