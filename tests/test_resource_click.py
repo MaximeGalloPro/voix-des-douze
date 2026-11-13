@@ -468,3 +468,50 @@ def test_idle_timeout_skips_stuck_target_without_requeuing_it(assist, monkeypatc
     c.idle_expired()
     assert len(clicks) == (2 if other_available else 1)
     assert errors == []
+
+
+def test_idle_groups_neighbours_instead_of_following_random_deadlines(assist, monkeypatch):
+    w, c, clicks, errors = assist
+    now = [100.0]
+    monkeypatch.setattr("voix_des_douze.resource_click.time.monotonic", lambda: now[0])
+    # Table order and delays both put the far resource before the close pair.
+    resources = [Resource(i, 1, "Blé", cell, 0, True)
+                 for i, cell in ((1, 280), (2, 293), (3, 284), (4, 281))]
+
+    def observed():
+        return ResourceSnapshot(1, False, tuple(resources), 0, "itw")
+
+    c.update(observed())
+    c.toggle_idle()
+    c.idle_pending.update({1: 101.8, 2: 100.8, 3: 101.0, 4: 103.0})
+    now[0] = 102.0
+    c.idle_next()
+    assert c.idle_target == 1
+    resources[0] = Resource(1, 1, "Blé", 280, 1, False)
+    c.update(observed())
+    c.idle_next()
+    assert len(clicks) == 1  # Wait for the near resource, not the ready far one.
+    now[0] = 104.0
+    c.idle_next()
+    assert c.idle_target == 4
+    resources[3] = Resource(4, 1, "Blé", 281, 1, False)
+    c.update(observed())
+    c.idle_next()
+    assert c.idle_target == 3
+    resources[2] = Resource(3, 1, "Blé", 284, 1, False)
+    c.update(observed())
+    c.idle_next()
+    assert c.idle_target == 2
+    assert len(clicks) == 4
+    assert errors == []
+    c.stop_idle()
+    assert c.idle_origin is None
+
+
+def test_idle_distance_respects_staggered_rows():
+    from voix_des_douze.resource_click import idle_nearest
+
+    # Cell 13 is adjacent to 27, despite a larger numeric ID difference.
+    assert idle_nearest({1: 14, 2: 13}, 27) == 2
+    # The adjacent odd/even-row cell is closer than two horizontal steps.
+    assert idle_nearest({1: 282, 2: 294}, 280) == 2

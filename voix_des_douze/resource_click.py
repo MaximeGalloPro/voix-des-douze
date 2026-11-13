@@ -20,6 +20,42 @@ from .idle_hint import IdleHint
 from .settings import data_directory
 
 
+def idle_nearest(cells, origin):
+    """Choose by diamond-grid distance, not screen pixels or random deadlines."""
+    def coordinates(cell):
+        row, column = divmod(cell, 14)
+        return column + (row + 1) // 2, column - row // 2
+
+    points = {element_id: coordinates(cell) for element_id, cell in cells.items()}
+
+    def distance(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    if origin is not None:
+        here = coordinates(origin)
+        return min(points, key=lambda key: (distance(here, points[key]), key))
+
+    # No player position: compare greedy open routes from the four extrema.
+    # At most four O(n²) walks; never enumerate permutations.
+    starts = {choose(points, key=lambda key: (points[key][axis], key))
+              for axis in (0, 1) for choose in (min, max)}
+    best = None
+    for start in sorted(starts):
+        remaining = set(points)
+        remaining.remove(start)
+        current, length = start, 0
+        while remaining:
+            following = min(remaining, key=lambda key: (
+                distance(points[current], points[key]), key))
+            length += distance(points[current], points[following])
+            remaining.remove(following)
+            current = following
+        candidate = length, start
+        if best is None or candidate < best:
+            best = candidate
+    return best[1]
+
+
 class Point(C.Structure):
     _fields_ = [("x", C.c_double), ("y", C.c_double)]
 
@@ -144,6 +180,7 @@ class FirstResourceClick(QObject):
         self.idle = False
         self.idle_pending = {}
         self.idle_target = None
+        self.idle_origin = None
         self.idle_timer = QTimer(self)
         self.idle_timer.setSingleShot(True)
         self.idle_timer.setTimerType(Qt.PreciseTimer)
@@ -162,6 +199,7 @@ class FirstResourceClick(QObject):
         self.idle_timeout.stop()
         self.idle_pending.clear()
         self.idle_target = None
+        self.idle_origin = None
         self.idle_changed.emit("Idle désactivé")
 
     def toggle_idle(self):
@@ -188,7 +226,13 @@ class FirstResourceClick(QObject):
     def idle_next(self):
         if not self.idle or self.idle_target is not None or not self.idle_pending:
             return
-        element_id = min(self.idle_pending, key=self.idle_pending.get)
+        cells = {r.element_id: r.cell for r in self.snapshot.resources
+                 if r.element_id in self.idle_pending and r.harvestable
+                 and 0 <= r.cell < 560}
+        if not cells:
+            self.idle_pending.clear()
+            return
+        element_id = idle_nearest(cells, self.idle_origin)
         remaining = self.idle_pending[element_id] - time.monotonic()
         if remaining > 0:
             self.idle_timer.start(max(1, math.ceil(remaining * 1000)))
@@ -370,6 +414,8 @@ class FirstResourceClick(QObject):
             self.record("bloqué", raison=str(exc))
             w.show_error(str(exc))
             return
+        if self.idle and element_id == self.idle_target:
+            self.idle_origin = resource.cell
         self.record("clic envoyé", récolte_confirmée=False)
         w.status.setText(f"Premier clic envoyé : {resource.name}, case {resource.cell} · récolte non confirmée")
         return True
