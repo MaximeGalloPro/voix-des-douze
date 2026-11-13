@@ -16,6 +16,7 @@ import time
 from PySide6.QtCore import QObject, QPointF, Qt, QTimer, Signal
 
 from .overlay import ForegroundProcess, cell_point, fullscreen_transform, screen_key
+from .idle_hint import IdleHint
 from .settings import data_directory
 
 
@@ -147,10 +148,18 @@ class FirstResourceClick(QObject):
         self.idle_timer.setSingleShot(True)
         self.idle_timer.setTimerType(Qt.PreciseTimer)
         self.idle_timer.timeout.connect(self.idle_next)
+        self.idle_timeout = QTimer(self)
+        self.idle_timeout.setSingleShot(True)
+        self.idle_timeout.setTimerType(Qt.PreciseTimer)
+        self.idle_timeout.setInterval(10000)
+        self.idle_timeout.timeout.connect(self.idle_expired)
+        self.idle_hint = IdleHint(window)
 
     def stop_idle(self):
         self.idle = False
+        self.idle_hint.set_active(False)
         self.idle_timer.stop()
+        self.idle_timeout.stop()
         self.idle_pending.clear()
         self.idle_target = None
         self.idle_changed.emit("Idle désactivé")
@@ -167,6 +176,7 @@ class FirstResourceClick(QObject):
         self.timer.stop()
         self.cancel_debug_sequence()
         self.idle = True
+        self.idle_hint.set_active(True)
         now = time.monotonic()
         self.idle_pending = {
             r.element_id: now + random.randint(800, 1800) / 1000
@@ -188,7 +198,13 @@ class FirstResourceClick(QObject):
         if not self.click(manual=True, element_id=element_id):
             self.stop_idle()
             return
-        # Only a later network update can release the current target.
+        self.idle_timeout.start()
+
+    def idle_expired(self):
+        if not self.idle or self.idle_target is None:
+            return
+        self.idle_target = None
+        self.idle_next()
 
     def record(self, stage, **fields):
         if self.file is None:
@@ -290,6 +306,7 @@ class FirstResourceClick(QObject):
                 if target is None or target.state == 1 or (
                         target.state == 0 and not target.harvestable):
                     self.idle_target = None
+                    self.idle_timeout.stop()
             for element_id in self.idle_pending.keys() - available:
                 del self.idle_pending[element_id]
             now = time.monotonic()

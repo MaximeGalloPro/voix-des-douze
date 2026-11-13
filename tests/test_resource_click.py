@@ -33,7 +33,7 @@ def assist(click_app):
     screen = w.screen()
     key = screen_key(screen)
     w.store = SimpleNamespace(settings=SimpleNamespace(
-        overlay_screen=key, overlay_adjustments={key: [0, 0, 1]}))
+        overlay_screen=key, overlay_adjustments={key: [0, 0, 1]}, idle_hint_positions={}))
     controller = FirstResourceClick(w, lambda *args: clicks.append(args))
     controller.timer.setInterval(10)
     yield w, controller, clicks, errors
@@ -373,4 +373,98 @@ def test_idle_collects_existing_resources_serially(assist, monkeypatch, completi
     assert not c.idle_pending
     c.idle_next()
     assert len(clicks) == 2
+    assert errors == []
+
+
+def test_idle_hint_visibility_tracks_mode_and_foreground(assist):
+    w, c, clicks, errors = assist
+    hint = c.idle_hint
+    assert not hint.isVisible()
+    c.update(snapshot(1, state=1))
+    c.toggle_idle()
+    assert hint.isVisible()
+    w.overlay.foreground = lambda: 456
+    hint.refresh()
+    assert not hint.isVisible()
+    w.overlay.foreground = lambda: 123
+    hint.refresh()
+    assert hint.isVisible()
+    c.update(snapshot(2, state=1))
+    assert not hint.isVisible()
+    hint.refresh()
+    assert not hint.isVisible()
+    c.toggle_idle()
+    assert hint.isVisible()
+    c.toggle_idle()
+    assert not hint.isVisible()
+
+
+def test_idle_hint_drag_position_survives_restart(assist, tmp_path):
+    from PySide6.QtCore import QPoint, QPointF, QEvent, Qt
+    from PySide6.QtGui import QMouseEvent
+    from voix_des_douze.settings import Store
+
+    w, c, clicks, errors = assist
+    store = Store(tmp_path / "settings.json")
+    store.settings.overlay_screen = w.store.settings.overlay_screen
+    w.store = store
+    c.update(snapshot(1, state=1))
+    c.toggle_idle()
+    hint = c.idle_hint
+    origin = hint.pos()
+    local = QPointF(8, 8)
+    start = QPointF(hint.mapToGlobal(QPoint(8, 8)))
+    end = start + QPointF(90, 70)
+    for kind, position, buttons in (
+            (QEvent.MouseButtonPress, start, Qt.LeftButton),
+            (QEvent.MouseMove, end, Qt.LeftButton),
+            (QEvent.MouseButtonRelease, end, Qt.NoButton)):
+        button = Qt.NoButton if kind == QEvent.MouseMove else Qt.LeftButton
+        QApplication.sendEvent(hint, QMouseEvent(
+            kind, local, position, button, buttons, Qt.NoModifier))
+    expected = hint.bounded_position(origin + QPoint(90, 70))
+    assert hint.pos() == expected
+    c.stop_idle()
+    w.store = Store(store.path)
+    hint.move(origin)
+    c.toggle_idle()
+    assert hint.pos() == expected
+    assert hint.isVisible()
+    assert errors == []
+
+
+@pytest.mark.parametrize("other_available", [True, False])
+def test_idle_timeout_skips_stuck_target_without_requeuing_it(assist, monkeypatch, other_available):
+    w, c, clicks, errors = assist
+    now = [100.0]
+    monkeypatch.setattr("voix_des_douze.resource_click.time.monotonic", lambda: now[0])
+    monkeypatch.setattr("voix_des_douze.resource_click.random.randint", lambda a, b: 1200)
+    resources = (Resource(1, 1, "Blé", 280, 0, True),
+                 Resource(2, 1, "Blé", 281, 0, True))
+    observed = ResourceSnapshot(1, False, resources, 0, "itw")
+    c.update(observed)
+    c.toggle_idle()
+    now[0] = 102.0
+    c.idle_next()
+    assert c.idle_target == 1
+    assert len(clicks) == 1
+    if not other_available:
+        observed = snapshot(1)
+    c.update(observed)
+    c.idle_next()
+    assert len(clicks) == 1
+    now[0] = 112.0
+    c.idle_timeout.stop()
+    c.idle_expired()
+    assert c.idle
+    assert len(clicks) == (2 if other_available else 1)
+    assert c.idle_target == (2 if other_available else None)
+    assert 1 not in c.idle_pending
+    c.update(observed)
+    c.idle_next()
+    assert len(clicks) == (2 if other_available else 1)
+    c.stop_idle()
+    assert not c.idle_timeout.isActive()
+    c.idle_expired()
+    assert len(clicks) == (2 if other_available else 1)
     assert errors == []
