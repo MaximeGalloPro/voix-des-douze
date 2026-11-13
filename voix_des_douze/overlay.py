@@ -10,7 +10,7 @@ from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPa
 from PySide6.QtWidgets import QWidget
 
 from .monster_safety import (MONSTER_DISTANCE, PLAYER_HALF_WIDTH, PLAYER_ABOVE,
-                             PLAYER_BELOW, cell_coordinates)
+                             PLAYER_BELOW, PLAYER_FADE_SECONDS, cell_coordinates)
 
 
 def cell_point(cell):
@@ -213,13 +213,12 @@ class ResourceOverlay(QWidget):
             reserved = tuple(safety.reserved)
             groups = dict(safety.groups)
             players = dict(safety.players)
-            paths = {entity: tuple(cells) for entity, cells in safety.player_paths.items()}
+            paths = safety.player_opacity()
         font = QFont()
         font.setPointSize(11)
         painter.setFont(font)
-        monster_zones, player_zones = QPainterPath(), QPainterPath()
+        monster_zones = QPainterPath()
         monster_zones.setFillRule(Qt.WindingFill)
-        player_zones.setFillRule(Qt.WindingFill)
         for cell in reserved:
             u, v = cell_coordinates(cell)
             vertices = ((u - MONSTER_DISTANCE, v), (u, v - MONSTER_DISTANCE),
@@ -229,21 +228,25 @@ class ResourceOverlay(QWidget):
             monster_zones.addPolygon(polygon)
             monster_zones.closeSubpath()
         for cells in paths.values():
-            for cell in cells:
+            for cell, opacity in cells.items():
                 ground = cell_point(cell)
                 polygon = QPolygonF([self.transform.map(ground + QPointF(dx, dy))
                     for dx, dy in ((-PLAYER_HALF_WIDTH, -PLAYER_ABOVE),
                                    (PLAYER_HALF_WIDTH, -PLAYER_ABOVE),
                                    (PLAYER_HALF_WIDTH, PLAYER_BELOW),
                                    (-PLAYER_HALF_WIDTH, PLAYER_BELOW))])
-                player_zones.addPolygon(polygon)
-                player_zones.closeSubpath()
-        for path, color in ((monster_zones, QColor(255, 70, 55)), (player_zones, QColor(30, 210, 255))):
-            painter.setPen(QPen(color, 1))
-            fill = QColor(color)
-            fill.setAlpha(38)
-            painter.setBrush(fill)
-            painter.drawPath(path)
+                color = QColor(30, 210, 255)
+                color.setAlpha(round(255 * opacity))
+                painter.setPen(QPen(color, 1))
+                color.setAlpha(round(38 * opacity))
+                painter.setBrush(color)
+                painter.drawPolygon(polygon)
+        color = QColor(255, 70, 55)
+        painter.setPen(QPen(color, 1))
+        fill = QColor(color)
+        fill.setAlpha(38)
+        painter.setBrush(fill)
+        painter.drawPath(monster_zones)
         for category, actors, color in (("M", groups, QColor("#ff6655")), ("J", players, QColor("#65e3ff"))):
             painter.setPen(color)
             painter.setBrush(Qt.NoBrush)
@@ -287,6 +290,7 @@ class ResourceOverlay(QWidget):
             f"DEBUG PROTECTIONS · carte {map_id} · {'synchronisée' if synchronized else 'NON SYNCHRONISÉE — aucun clic sûr'}",
             f"Rouge : monstres d < {MONSTER_DISTANCE:g} case · cyan : joueurs |dx| ≤ {PLAYER_HALF_WIDTH:g}, dy ∈ [−{PLAYER_ABOVE:g}, {PLAYER_BELOW:g}]",
             "Contours = zones réseau mémorisées · jaune = sorties calibrées · pas les contours réels des sprites",
+            f"Trajets joueurs : fade sur {PLAYER_FADE_SECONDS:g} s après passage estimé · dernière position conservée",
             detail, cursor_result,
         ]
         if self.protection_target is not None and self.protection_target[0] == map_id:

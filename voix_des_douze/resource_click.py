@@ -207,6 +207,7 @@ class FirstResourceClick(QObject):
         journey = self.journey
         snapshot = self.snapshot
         with self.monsters.lock:
+            self.monsters.expire_player_paths()
             safety = {
                 "carte": self.monsters.map_id, "synchronisé": self.monsters.synchronized,
                 "groupes": sorted(self.monsters.groups.values()),
@@ -231,7 +232,8 @@ class FirstResourceClick(QObject):
             "carte_attendue": journey.expected,
             "timers_ms": {"prochaine_action": self.idle_timer.remainingTime(),
                           "récolte": self.idle_timeout.remainingTime(),
-                          "sortie": journey.timeout.remainingTime()},
+                          "sortie": journey.timeout.remainingTime(),
+                          "obstacle_sortie": journey.retry.remainingTime()},
             "ressources": [{"élément": r.element_id, "case": r.cell, "état": r.state,
                             "récoltable": r.harvestable} for r in snapshot.resources] if snapshot else [],
             "sécurité": safety}

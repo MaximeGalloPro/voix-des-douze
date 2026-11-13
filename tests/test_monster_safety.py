@@ -5,7 +5,7 @@ from PySide6.QtCore import QPointF
 from test_network import blob, num, vint
 from test_resource_click import assist, click_app, snapshot
 from test_idle_route import route, run_next, empty
-from voix_des_douze.monster_safety import MonsterSafety, cell_coordinates, path_cells
+from voix_des_douze.monster_safety import MonsterSafety, PlayerOverlap, cell_coordinates, path_cells
 from voix_des_douze.network_protocol import ProtocolError
 from voix_des_douze.overlay import cell_point, fullscreen_transform
 
@@ -112,7 +112,7 @@ def test_all_harvest_modes_recheck_monsters_at_dispatch(assist, tmp_path, mode):
         assert any('Protection anti-combat' in error for error in errors)
 
 
-def test_exit_guard_checks_actual_randomized_point_and_stops_circuit(route, monkeypatch):
+def test_exit_guard_checks_actual_randomized_point_and_waits_for_clearance(route, monkeypatch):
     w, c, clicks, errors, memory = route
     c.update(empty(1))
     full(c.monsters, actors=(actor(-2, 280),))
@@ -122,9 +122,15 @@ def test_exit_guard_checks_actual_randomized_point_and_stops_circuit(route, monk
     c.toggle_idle()
     run_next(c)
     assert clicks == []
-    assert not c.idle and c.journey.expected is None
-    assert not c.journey.timeout.isActive()
-    assert any('Protection anti-combat' in error for error in errors)
+    assert c.idle and c.journey.expected is None
+    assert not c.journey.timeout.isActive() and c.journey.retry.isActive()
+    assert errors == []
+    full(c.monsters)
+    c.journey.retry.stop()
+    c.journey.step()
+    assert c.journey.expected == 2 and len(clicks) == 1
+    c.journey.step()
+    assert len(clicks) == 1
 
 
 def test_no_sync_and_no_projection_cannot_send_even_on_empty_resource_map(assist):
@@ -213,9 +219,10 @@ def test_last_skipped_resource_does_not_bypass_a_dangerous_exit(route, monkeypat
     run_next(c)
     assert c.idle and c.idle_skipped == {1} and clicks == []
     run_next(c)
-    assert not c.idle and c.journey.expected is None
+    assert c.idle and c.journey.expected is None
+    assert c.journey.retry.isActive()
     assert not c.journey.timeout.isActive() and clicks == []
-    assert errors
+    assert errors == []
 
 
 def test_player_intermediate_stop_keeps_click_guard_and_accepts_following_path():
@@ -291,3 +298,79 @@ def test_reduced_player_envelope_boundaries(dx, dy, blocked):
     else:
         safety.send(1, target, lambda: sent.append('clicked'))
         assert sent == ['clicked']
+
+
+def test_player_passages_fade_in_order_but_stationary_endpoint_does_not(monkeypatch):
+    from types import SimpleNamespace
+    clock = [100.0]
+    monkeypatch.setattr('voix_des_douze.monster_safety.time', SimpleNamespace(monotonic=lambda: clock[0]))
+    safety = MonsterSafety()
+    full(safety, actors=(actor(12, 294, 3),))
+    move(safety, 12, [294, 266, 238, 210, 182, 154, 141, 127, 114, 100, 87, 73, 60, 46, 33, 19])
+    initial = safety.player_opacity()[12]
+    clock[0] = 101.0
+    assert 0 < safety.player_opacity()[12][294] < initial[294]
+    with pytest.raises(PlayerOverlap):
+        safety.send(1, cell_coordinates(294), lambda: pytest.fail('passage released too soon'))
+    clock[0] = 102.0
+    sent = []
+    safety.send(1, cell_coordinates(294), lambda: sent.append('start released'))
+    with pytest.raises(PlayerOverlap):
+        safety.send(1, cell_coordinates(100), lambda: pytest.fail('later passage released too soon'))
+    clock[0] = 1000.0
+    safety.send(1, cell_coordinates(100), lambda: sent.append('middle released'))
+    with pytest.raises(PlayerOverlap):
+        safety.send(1, cell_coordinates(19), lambda: pytest.fail('stationary endpoint released'))
+    assert safety.player_paths[12] == {19}
+    assert sent == ['start released', 'middle released']
+
+
+def test_blocked_exit_rechecks_fade_without_network_updates_then_posts_once(route, monkeypatch):
+    from types import SimpleNamespace
+    clock = [100.0]
+    monkeypatch.setattr('voix_des_douze.monster_safety.time', SimpleNamespace(monotonic=lambda: clock[0]))
+    w, c, clicks, errors, memory = route
+    c.update(empty(1))
+    full(c.monsters, actors=(actor(12, 294, 3),))
+    move(c.monsters, 12, [294, 266, 238, 210, 182, 154, 141, 127, 114, 100, 87, 73, 60, 46, 33, 19])
+    point = fullscreen_transform(w.screen().geometry(), [0, 0, 1]).map(cell_point(294))
+    monkeypatch.setattr('voix_des_douze.idle_route.sample_exit', lambda *args: point)
+    c.toggle_idle()
+    run_next(c)
+    assert c.idle and c.journey.expected is None and clicks == []
+    assert c.journey.retry.isActive() and not c.journey.timeout.isActive()
+    # Repeated resource snapshots cannot bypass the obstacle wait.
+    c.update(empty(1))
+    run_next(c)
+    assert clicks == []
+    clock[0] = 103.0
+    c.journey.retry.stop()
+    c.journey.step()
+    assert c.journey.expected == 2 and len(clicks) == 1
+    assert c.journey.timeout.isActive()
+    c.journey.step()
+    assert len(clicks) == 1 and errors == []
+
+
+@pytest.mark.parametrize('failure', ['focus', 'map', 'sync', 'shortcut'])
+def test_waiting_exit_cannot_resume_after_loss_of_safety(route, monkeypatch, failure):
+    w, c, clicks, errors, memory = route
+    c.update(empty(1))
+    full(c.monsters, actors=(actor(12, 280, 3),))
+    point = fullscreen_transform(w.screen().geometry(), [0, 0, 1]).map(cell_point(280))
+    monkeypatch.setattr('voix_des_douze.idle_route.sample_exit', lambda *args: point)
+    c.toggle_idle()
+    run_next(c)
+    assert c.journey.retry.isActive() and clicks == []
+    if failure == 'focus':
+        w.overlay.foreground = lambda: 456
+    elif failure == 'map':
+        c.update(empty(3))
+    elif failure == 'sync':
+        c.monsters.clear()
+    else:
+        c.toggle_idle()
+    c.journey.retry.stop()
+    c.journey.step()
+    assert not c.idle and clicks == []
+    assert not c.journey.retry.isActive() and not c.journey.timeout.isActive()

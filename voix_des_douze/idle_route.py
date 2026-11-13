@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
 
 from .map_exits import DIRECTIONS, sample_exit
 from .overlay import screen_key
+from .monster_safety import MonsterProximity, PlayerOverlap
 
 
 def direction_between(maps, origin, target):
@@ -71,6 +72,10 @@ class IdleJourney(QObject):
         self.guard = QTimer(self)
         self.guard.setInterval(250)
         self.guard.timeout.connect(self.check)
+        self.retry = QTimer(self)
+        self.retry.setSingleShot(True)
+        self.retry.setInterval(500)
+        self.retry.timeout.connect(self.step)
 
     @property
     def at_stop(self):
@@ -82,6 +87,7 @@ class IdleJourney(QObject):
         self.path.clear()
         self.timeout.stop()
         self.guard.stop()
+        self.retry.stop()
 
     def fail(self, message):
         self.owner.stop_idle(message)
@@ -138,7 +144,7 @@ class IdleJourney(QObject):
         return True
 
     def step(self):
-        if not self.check() or self.expected is not None:
+        if not self.check() or self.expected is not None or self.retry.isActive():
             return
         current = self.owner.snapshot.map_id
         if not self.path:
@@ -159,6 +165,13 @@ class IdleJourney(QObject):
             self.owner.record("sortie tentée", origine=current, destination=target,
                               direction=direction, x=point.x(), y=point.y())
             self.owner.guarded_send(current, point, geometry)
+        except (MonsterProximity, PlayerOverlap) as exc:
+            self.expected = None
+            self.owner.record("sortie en attente", origine=current, destination=target,
+                              raison=str(exc), réévaluation_ms=self.retry.interval())
+            self.owner.idle_changed.emit(f'Idle · sortie {DIRECTIONS[direction]} occupée · attente obstacle')
+            self.retry.start()
+            return
         except (ValueError, RuntimeError) as exc:
             self.fail(str(exc))
             return
