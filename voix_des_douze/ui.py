@@ -510,20 +510,20 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(False)
         self.client_combo.setEnabled(False)
         self.network_status.setText(f"Vérification de {client.label} et demande d’autorisation…")
-        self.clear_resources()
+        self.clear_resources(reason="nouvelle écoute")
         self.overlay.pid = client.pid
         self.listener = NetworkSession(client,
             lambda kind, value: self.events.network.emit(generation, kind, value) if not self.shutting_down else None,
             lambda: self.playback.cancel() if generation == self.generation else None,
             monsters=self.resource_click.monsters)
 
-    def stop(self):
+    def stop(self, *, reason="arrêt demandé de l’écoute"):
         self.accepting = False
         self.paused = False
         self.pause_button.setText("Suspendre")
         self.playback.cancel()
         self.resource_alert.stop()
-        self.clear_resources("Écoute arrêtée · données de ressources effacées")
+        self.clear_resources("Écoute arrêtée · données de ressources effacées", reason=reason)
         self.clear_dialogue()
         if self.listener:
             self.listener.stop()
@@ -533,7 +533,7 @@ class MainWindow(QMainWindow):
 
     def toggle_pause(self):
         if self.listener is not None and self.accepting:
-            self.stop()
+            self.stop(reason="suspension de l’écoute")
             self.paused = True
             self.pause_button.setText("Reprendre")
             self.status.setText("Suspendu · capture et audio arrêtés. Reprendre demandera une nouvelle écoute.")
@@ -551,7 +551,8 @@ class MainWindow(QMainWindow):
             self.network_status.setText("Écoute arrêtée · aucun paquet capturé" if not value else f"Écoute arrêtée · {value}")
             self.clear_dialogue()
             self.resource_alert.stop()
-            self.clear_resources("Écoute arrêtée · données de ressources effacées")
+            self.clear_resources("Écoute arrêtée · données de ressources effacées",
+                                 reason=f"fin du worker réseau : {value or 'écoute terminée'}")
             if not self.paused:
                 self.status.setText(value or "Écoute terminée. Aucun service ne reste installé ou actif.")
             return
@@ -572,14 +573,15 @@ class MainWindow(QMainWindow):
             revision, payload = value
             self.listener.deliver(revision, lambda: self.show_network_dialogue(kind, payload))
 
-    def clear_resources(self, message="En attente de la première carte · aucun comptage disponible"):
+    def clear_resources(self, message="En attente de la première carte · aucun comptage disponible",
+                        *, reason="ressources effacées"):
         editor = getattr(self, "route_editor", None)
         if editor is not None:
             editor.interrupt()
         self.resource_summary.setText(message)
         self.resource_table.setRowCount(0)
         self.overlay.set_resources(())
-        self.resource_click.clear()
+        self.resource_click.clear(reason)
         self.compass.clear()
 
     def toggle_first_resource(self, enabled):
@@ -664,7 +666,7 @@ class MainWindow(QMainWindow):
         collection = settings.idle_routes.get(settings.compass_profile, {})
         if name not in collection.get("circuits", {}) or name == collection.get("selected"):
             return
-        self.resource_click.stop_idle()
+        self.resource_click.stop_idle("changement de circuit")
         self.resource_click.timer.stop()
         self.resource_click.cancel_debug_sequence()
         previous = collection["selected"]
@@ -677,7 +679,7 @@ class MainWindow(QMainWindow):
         self.refresh_idle_route_status()
 
     def configure_idle_route(self):
-        self.resource_click.stop_idle()
+        self.resource_click.stop_idle("ouverture de l’éditeur de circuit")
         self.resource_click.timer.stop()
         self.resource_click.cancel_debug_sequence()
         self.route_editor = RouteEditor(self)
@@ -723,7 +725,7 @@ class MainWindow(QMainWindow):
         if not dialog.exec():
             return
         screen = screens.currentData()
-        self.resource_click.stop_idle()
+        self.resource_click.stop_idle("calibration des sorties")
         self.resource_click.timer.stop()
         self.resource_click.cancel_debug_sequence()
         self.overlay.calibrating = True
@@ -794,7 +796,7 @@ class MainWindow(QMainWindow):
         screen = screen_combo.currentData()
         saved = self.store.settings.overlay_adjustments.get(screen_key(screen), [0, 0, 1])
         self.overlay.calibrating = True
-        self.resource_click.stop_idle()
+        self.resource_click.stop_idle("calibration des repères")
         self.resource_click.timer.stop()
         self.resource_click.cancel_debug_sequence()
         self.overlay.hide()
@@ -914,7 +916,7 @@ class MainWindow(QMainWindow):
     def toggle_idle_shortcut(self, enabled):
         self.store.settings.idle_shortcut_enabled = enabled
         if not enabled:
-            self.resource_click.stop_idle()
+            self.resource_click.stop_idle("raccourci idle désactivé")
         errors = self.hotkeys.configure(self.store.settings.shortcuts, enabled)
         try:
             self.store.save()
@@ -1002,7 +1004,7 @@ class MainWindow(QMainWindow):
                     os.killpg(process.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
-        self.stop()
+        self.stop(reason="fermeture de l’application")
         self.compass.close()
         self.resource_click.record("fin", raison="fermeture")
         self.resource_click.stop_debug()

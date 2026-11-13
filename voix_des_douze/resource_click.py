@@ -12,6 +12,7 @@ import random
 import sys
 import tempfile
 import time
+from uuid import uuid4
 
 from PySide6.QtCore import QObject, QPointF, Qt, QTimer, Signal
 
@@ -20,6 +21,7 @@ from .idle_hint import IdleHint
 from .settings import data_directory
 from .idle_route import IdleJourney
 from .monster_safety import MonsterSafety, PlayerOverlap, cell_coordinates
+from .idle_log import IdleJournal
 
 
 def idle_nearest(cells, origin):
@@ -194,8 +196,49 @@ class FirstResourceClick(QObject):
         self.idle_timeout.timeout.connect(self.idle_expired)
         self.idle_hint = IdleHint(window)
         self.journey = IdleJourney(self)
+        self.idle_run = None
+        self.last_click_failure = None
+        directory = getattr(window.store, "path", data_directory() / "settings.json").parent / "debug"
+        self.idle_journal = IdleJournal(directory, window.show_error)
 
-    def stop_idle(self):
+    def idle_context(self):
+        w = self.window
+        journey = self.journey
+        snapshot = self.snapshot
+        with self.monsters.lock:
+            safety = {
+                "carte": self.monsters.map_id, "synchronisé": self.monsters.synchronized,
+                "groupes": sorted(self.monsters.groups.values()),
+                "cases_monstres_réservées": sorted(self.monsters.reserved),
+                "trajets_joueurs": [sorted(cells) for cells in self.monsters.player_paths.values()]}
+        settings = w.store.settings
+        return {
+            "actif": self.idle, "carte": snapshot.map_id if snapshot else None,
+            "cible": self.idle_target, "origine": self.idle_origin,
+            "en_attente": dict(self.idle_pending), "ignorés": sorted(self.idle_skipped),
+            "écoute": w.accepting, "suspendu": w.paused,
+            "pid_dofus": w.overlay.pid, "pid_premier_plan": w.overlay.foreground(),
+            "calibration": w.overlay.calibrating,
+            "écran_repères": settings.overlay_screen,
+            "repères": settings.overlay_adjustments.get(settings.overlay_screen),
+            "écran_sorties": settings.map_exit_screen,
+            "sorties": settings.map_exits.get(settings.map_exit_screen),
+            "profil": settings.compass_profile,
+            "circuit_choisi": settings.idle_routes.get(settings.compass_profile, {}).get("selected"),
+            "circuit_actif": journey.active, "étape": getattr(journey, "index", None),
+            "étapes": getattr(journey, "stops", ()), "trajet_restant": list(journey.path),
+            "carte_attendue": journey.expected,
+            "timers_ms": {"prochaine_action": self.idle_timer.remainingTime(),
+                          "récolte": self.idle_timeout.remainingTime(),
+                          "sortie": journey.timeout.remainingTime()},
+            "ressources": [{"élément": r.element_id, "case": r.cell, "état": r.state,
+                            "récoltable": r.harvestable} for r in snapshot.resources] if snapshot else [],
+            "sécurité": safety}
+
+    def stop_idle(self, reason="arrêt demandé"):
+        was_idle = self.idle
+        if was_idle:
+            self.record("idle arrêté", raison=reason)
         self.journey.stop()
         self.idle = False
         self.idle_hint.set_active(False)
@@ -205,27 +248,34 @@ class FirstResourceClick(QObject):
         self.idle_skipped.clear()
         self.idle_target = None
         self.idle_origin = None
-        self.idle_changed.emit("Idle désactivé")
+        if was_idle:
+            self.idle_changed.emit(f"Idle désactivé · {reason}")
 
     def toggle_idle(self):
         if self.idle:
-            self.stop_idle()
+            self.stop_idle("raccourci idle · arrêt manuel")
             return
+        self.idle_run = uuid4().hex
+        self.record("idle activation demandée")
         w = self.window
         if getattr(w, "route_editor", None) is not None:
+            self.record("idle démarrage refusé", raison="enregistrement de circuit ouvert")
             w.show_error("Idle : terminez ou annulez l’enregistrement du circuit.")
             return
         if (self.snapshot is None or not w.accepting or w.paused
                 or w.overlay.pid is None or w.overlay.foreground() != w.overlay.pid):
+            self.record("idle démarrage refusé", raison="carte, écoute ou premier plan non disponible")
             w.show_error("Idle : synchronisez une carte et gardez Dofus au premier plan pendant l’écoute.")
             return
         if w.overlay.calibrating:
+            self.record("idle démarrage refusé", raison="calibration ouverte")
             w.show_error("Idle : terminez le réglage des repères ou des sorties.")
             return
         try:
             self.journey.start(self.snapshot)
         except ValueError as exc:
             self.journey.stop()
+            self.record("idle démarrage refusé", raison=str(exc))
             w.show_error(f"Circuit idle : {exc}")
             return
         self.timer.stop()
@@ -241,6 +291,7 @@ class FirstResourceClick(QObject):
                                else "Idle actif · une cible à la fois · 800–1 800 ms")
         if self.idle_pending or self.journey.active:
             self.idle_timer.start(random.randint(800, 1800) if self.journey.active else 0)
+        self.record("idle démarré")
 
     def idle_next(self):
         if not self.idle or self.idle_target is not None:
@@ -273,7 +324,7 @@ class FirstResourceClick(QObject):
         del self.idle_pending[element_id]
         self.idle_target = element_id
         if not self.click(manual=True, element_id=element_id):
-            self.stop_idle()
+            self.stop_idle("clic de récolte refusé : " + (self.last_click_failure or "aucune cible"))
             return
         if self.idle_target is not None:
             self.idle_timeout.start()
@@ -289,9 +340,14 @@ class FirstResourceClick(QObject):
         self.idle_pending.pop(element_id, None)
         self.idle_target = None
         self.idle_changed.emit(f"Idle · récolte non confirmée · élément {element_id} ignoré pour cette visite")
+        self.record("récolte expirée", élément=element_id, délai_ms=10000)
         self.idle_next()
 
     def record(self, stage, **fields):
+        if stage == "bloqué":
+            self.last_click_failure = fields.get("raison")
+        if self.idle or stage in {"idle activation demandée", "idle démarrage refusé"}:
+            self.idle_journal.write(self.idle_run, stage, self.idle_context(), fields)
         if self.file is None:
             return
         try:
@@ -322,7 +378,7 @@ class FirstResourceClick(QObject):
             self.file = None
 
     def manual_click(self):
-        self.stop_idle()
+        self.stop_idle("raccourci debug :")
         if self.file is None:
             return
         if self.debug_timer.isActive() or self.debug_targets:
@@ -359,8 +415,8 @@ class FirstResourceClick(QObject):
                 self.record("suite debug programmée", délai_ms=delay)
             return
 
-    def clear(self):
-        self.stop_idle()
+    def clear(self, reason="ressources effacées"):
+        self.stop_idle(reason)
         self.cancel_debug_sequence()
         self.timer.stop()
         self.window.overlay.clear_click_target()
@@ -379,7 +435,7 @@ class FirstResourceClick(QObject):
             was_journey = self.idle and self.journey.active
             travelling = was_journey and self.journey.arrive(snapshot.map_id)
             if not travelling:
-                self.stop_idle()
+                self.stop_idle("changement de carte hors circuit")
             self.cancel_debug_sequence()
             self.window.overlay.clear_click_target()
             self.timer.stop()
@@ -406,6 +462,9 @@ class FirstResourceClick(QObject):
                                if r.element_id == self.idle_target), None)
                 if target is None or target.state == 1 or (
                         target.state == 0 and not target.harvestable):
+                    self.record("récolte libérée", élément=self.idle_target,
+                                état=target.state if target else None,
+                                récoltable=target.harvestable if target else False)
                     self.idle_target = None
                     self.idle_timeout.stop()
             for element_id in self.idle_pending.keys() - available:

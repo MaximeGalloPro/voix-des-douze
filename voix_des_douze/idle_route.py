@@ -84,7 +84,7 @@ class IdleJourney(QObject):
         self.guard.stop()
 
     def fail(self, message):
-        self.owner.stop_idle()
+        self.owner.stop_idle(message)
         self.owner.window.show_error('Circuit idle : ' + message)
 
     def exit_screen(self):
@@ -125,10 +125,15 @@ class IdleJourney(QObject):
         if not self.active:
             return False
         w = self.owner.window
-        if (not w.accepting or w.paused or w.overlay.calibrating
-                or w.overlay.pid is None or w.overlay.foreground() != w.overlay.pid
-                or w.store.settings.compass_profile != self.profile):
-            self.fail('Arrêt : écoute, premier plan Dofus, profil ou calibration modifié. Réactivez idle pour reprendre.')
+        foreground = w.overlay.foreground()
+        reasons = [message for blocked, message in (
+            (not w.accepting, "écoute inactive"), (w.paused, "écoute suspendue"),
+            (w.overlay.calibrating, "calibration ouverte"),
+            (w.overlay.pid is None, "PID Dofus absent"),
+            (foreground != w.overlay.pid, f"premier plan perdu (PID observé {foreground}, Dofus {w.overlay.pid})"),
+            (w.store.settings.compass_profile != self.profile, "profil modifié")) if blocked]
+        if reasons:
+            self.fail("Arrêt : " + " ; ".join(reasons) + ". Réactivez idle pour reprendre.")
             return False
         return True
 
@@ -151,11 +156,15 @@ class IdleJourney(QObject):
             point = sample_exit(profile, direction) + QPointF(geometry.topLeft())
             # Mark in flight before posting; no further action until full map confirmation.
             self.expected = target
+            self.owner.record("sortie tentée", origine=current, destination=target,
+                              direction=direction, x=point.x(), y=point.y())
             self.owner.guarded_send(current, point, geometry)
         except (ValueError, RuntimeError) as exc:
             self.fail(str(exc))
             return
         self.timeout.start()
+        self.owner.record("sortie envoyée", origine=current, destination=target,
+                          délai_confirmation_ms=self.timeout.interval())
         self.owner.idle_changed.emit(
             f'Idle · étape {self.index + 1}/{len(self.stops)} · sortie {DIRECTIONS[direction]} · '
             f'attente carte {target}')
@@ -166,6 +175,7 @@ class IdleJourney(QObject):
         if self.expected is None or map_id != self.expected:
             self.fail(f'Arrivée inattendue sur la carte {map_id} (attendue : {self.expected}).')
             return False
+        self.owner.record("arrivée confirmée", carte=map_id)
         self.path.popleft()
         self.expected = None
         self.timeout.stop()
@@ -237,7 +247,7 @@ class RouteEditor(QDialog):
         if not self.window.accepting or self.window.paused:
             self.notice.setText('Démarrez l’écoute avant l’enregistrement.')
             return
-        self.window.resource_click.stop_idle()
+        self.window.resource_click.stop_idle("enregistrement d’un circuit")
         self.window.resource_click.timer.stop()
         self.window.resource_click.cancel_debug_sequence()
         snapshot = self.window.resource_click.snapshot

@@ -478,7 +478,7 @@ class CompassSettings(QWidget):
             return
         settings = self.compass.window.store.settings
         if profile != settings.compass_profile:
-            self.compass.window.resource_click.stop_idle()
+            self.compass.window.resource_click.stop_idle("changement de profil")
             self.compass.cancel_calibration()
             settings.compass_profile = profile
             self.compass.memory.select_profile(profile)

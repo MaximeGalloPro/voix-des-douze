@@ -21,7 +21,7 @@ def click_app():
 
 
 @pytest.fixture
-def assist(click_app, monkeypatch):
+def assist(click_app, monkeypatch, tmp_path):
     w = QWidget()
     w.first_resource = QCheckBox(w)
     w.first_resource.setChecked(True)
@@ -34,7 +34,7 @@ def assist(click_app, monkeypatch):
     w.show_error = errors.append
     screen = w.screen()
     key = screen_key(screen)
-    w.store = SimpleNamespace(settings=Settings(
+    w.store = SimpleNamespace(path=tmp_path / "settings.json", settings=Settings(
         overlay_screen=key, overlay_adjustments={key: [0, 0, 1]}))
     controller = FirstResourceClick(w, lambda *args: clicks.append(args))
     controller.timer.setInterval(10)
