@@ -186,6 +186,7 @@ class FirstResourceClick(QObject):
         self.idle_skipped = set()
         self.idle_target = None
         self.idle_origin = None
+        self.idle_exit_ready_at = 0
         self.idle_timer = QTimer(self)
         self.idle_timer.setSingleShot(True)
         self.idle_timer.setTimerType(Qt.PreciseTimer)
@@ -251,6 +252,7 @@ class FirstResourceClick(QObject):
         self.idle_skipped.clear()
         self.idle_target = None
         self.idle_origin = None
+        self.idle_exit_ready_at = 0
         if was_idle:
             self.idle_changed.emit(f"Idle désactivé · {reason}")
 
@@ -309,6 +311,13 @@ class FirstResourceClick(QObject):
             if self.journey.active and not any(
                     r.element_id not in self.idle_skipped and (r.harvestable or r.state == 2)
                     for r in self.snapshot.resources):
+                if self.idle_exit_ready_at is None:
+                    self.idle_exit_ready_at = time.monotonic() + 1
+                    self.record("sortie après récolte différée", délai_ms=1000)
+                remaining = self.idle_exit_ready_at - time.monotonic()
+                if remaining > 0:
+                    self.idle_timer.start(max(1, math.ceil(remaining * 1000)))
+                    return
                 self.journey.step()
             return
         cells = {r.element_id: r.cell for r in self.snapshot.resources
@@ -436,6 +445,7 @@ class FirstResourceClick(QObject):
             for r in snapshot.resources])
         if previous is None or previous.map_id != snapshot.map_id:
             self.idle_skipped.clear()
+            self.idle_exit_ready_at = 0
             was_journey = self.idle and self.journey.active
             travelling = was_journey and self.journey.arrive(snapshot.map_id)
             if not travelling:
@@ -565,6 +575,7 @@ class FirstResourceClick(QObject):
             return
         if self.idle and element_id == self.idle_target:
             self.idle_origin = resource.cell
+            self.idle_exit_ready_at = None
         self.record("clic envoyé", récolte_confirmée=False)
         w.status.setText(f"Premier clic envoyé : {resource.name}, case {resource.cell} · récolte non confirmée")
         return True

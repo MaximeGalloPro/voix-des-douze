@@ -52,6 +52,38 @@ def run_next(c):
     c.idle_timer.stop()
     c.idle_pending = dict.fromkeys(c.idle_pending, 0)
     c.idle_next()
+    if c.idle_exit_ready_at and c.idle_timer.isActive() and not c.idle_pending:
+        QTest.qWait(c.idle_timer.remainingTime() + 20)
+
+
+def test_harvest_to_exit_waits_but_next_harvest_does_not(route, monkeypatch):
+    w, c, clicks, errors, memory = route
+    from voix_des_douze import resource_click
+    clock = [100.0]
+    monkeypatch.setattr(resource_click.time, 'monotonic', lambda: clock[0])
+    second = Resource(2, 38, 'Blé', 281, 0, True)
+    c.update(ResourceSnapshot(1, True, (snapshot(1).resources[0], second), 0, 'jnj'))
+    c.toggle_idle()
+    run_next(c)
+    first_id = c.idle_target
+    first = snapshot(1, state=1).resources[0]
+    c.update(ResourceSnapshot(1, False, (first, second), 0, 'itw'))
+    run_next(c)
+    assert first_id == 1 and c.idle_target == 2 and len(clicks) == 2
+    depleted_second = Resource(2, 38, 'Blé', 281, 1, True)
+    end = ResourceSnapshot(1, False, (first, depleted_second), 0, 'itw')
+    c.update(end)
+    c.idle_timer.stop()
+    c.idle_next()
+    assert c.journey.expected is None and len(clicks) == 2
+    clock[0] = 100.999
+    c.update(end)  # Repeated snapshots cannot bypass the departure delay.
+    c.idle_next()
+    assert c.journey.expected is None and len(clicks) == 2
+    clock[0] = 101.0
+    c.idle_next()
+    assert c.journey.expected == 2 and len(clicks) == 3
+    assert errors == []
 
 
 def test_distant_loop_harvests_stops_but_not_intermediate_maps(route):
@@ -254,6 +286,7 @@ def test_last_failed_harvest_continues_loop_and_is_retried_next_visit(route, sta
     c.update(snapshot(1, state=state))
     c.idle_expired()
     assert c.idle and c.journey.active
+    run_next(c)
     assert c.journey.expected == 2
     assert c.idle_skipped == {1}
     assert len(clicks) == 2  # One harvest attempt, then the exit.
