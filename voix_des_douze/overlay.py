@@ -9,7 +9,7 @@ from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPen, QPolygonF, QTransform
 from PySide6.QtWidgets import QWidget
 
-from .monster_safety import (MONSTER_HALF_WIDTH, MONSTER_HALF_HEIGHT, PLAYER_HALF_WIDTH, PLAYER_ABOVE,
+from .monster_safety import (MONSTER_HALF_WIDTH, MONSTER_HALF_HEIGHT, MONSTER_CENTER_Y, PLAYER_HALF_WIDTH, PLAYER_ABOVE,
                              PLAYER_BELOW, PASSAGE_FADE_SECONDS, cell_coordinates)
 
 
@@ -225,7 +225,7 @@ class ResourceOverlay(QWidget):
         for cell, opacity in monster_opacity.items():
             u, v = cell_coordinates(cell)
             polygon = QPolygonF([
-                self.transform.map(QPointF((u + v) / 2 + dx, u - v + dy))
+                self.transform.map(QPointF((u + v) / 2 + dx, u - v + MONSTER_CENTER_Y + dy))
                 for dx, dy in ((-MONSTER_HALF_WIDTH, -MONSTER_HALF_HEIGHT),
                                (MONSTER_HALF_WIDTH, -MONSTER_HALF_HEIGHT),
                                (MONSTER_HALF_WIDTH, MONSTER_HALF_HEIGHT),
@@ -291,7 +291,7 @@ class ResourceOverlay(QWidget):
                 cursor_result = "REFUSÉ : " + str(exc)
         lines = [
             f"DEBUG PROTECTIONS · carte {map_id} · {'synchronisée' if synchronized else 'NON SYNCHRONISÉE — aucun clic sûr'}",
-            f"Rouge : carré monstres |dx| < {MONSTER_HALF_WIDTH:g}, |dy| < {MONSTER_HALF_HEIGHT:g} · cyan : joueurs |dx| ≤ {PLAYER_HALF_WIDTH:g}, dy ∈ [−{PLAYER_ABOVE:g}, {PLAYER_BELOW:g}]",
+            f"Rouge : carré monstres |dx| < {MONSTER_HALF_WIDTH:g}, |dy − ({MONSTER_CENTER_Y:g})| < {MONSTER_HALF_HEIGHT:g} · cyan : joueurs |dx| ≤ {PLAYER_HALF_WIDTH:g}, dy ∈ [−{PLAYER_ABOVE:g}, {PLAYER_BELOW:g}]",
             "Contours = zones réseau mémorisées · jaune = sorties calibrées · pas les contours réels des sprites",
             f"Trajets joueurs et monstres : fade sur {PASSAGE_FADE_SECONDS:g} s après passage estimé · dernière position conservée",
             detail, cursor_result,

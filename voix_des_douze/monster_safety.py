@@ -15,6 +15,7 @@ _CELLS = {point: cell for cell, point in enumerate(_COORDINATES)}
 
 MONSTER_HALF_WIDTH = 0.5
 MONSTER_HALF_HEIGHT = 2.0
+MONSTER_CENTER_Y = -0.8  # Raise by 20% of the four-unit square height.
 PLAYER_HALF_WIDTH = 0.5
 PLAYER_ABOVE = 2.75
 PLAYER_BELOW = 1.25
@@ -224,7 +225,7 @@ class MonsterSafety:
             self.expire_paths()
             x, y = coordinates
             if any(abs((x + y - u - v) / 2) < MONSTER_HALF_WIDTH - 1e-9
-                   and abs(x - y - u + v) < MONSTER_HALF_HEIGHT - 1e-9
+                   and abs(x - y - u + v - MONSTER_CENTER_Y) < MONSTER_HALF_HEIGHT - 1e-9
                    for cell in self.reserved for u, v in (_COORDINATES[cell],)):
                 raise MonsterProximity("Protection anti-combat : clic annulé dans le carré protégé d’un groupe ou de son trajet observé sur cette carte.")
             # Square screen envelope, retaining the previous player's center.

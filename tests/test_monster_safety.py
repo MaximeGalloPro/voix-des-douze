@@ -71,12 +71,13 @@ def test_one_case_boundary(offset, blocked):
 
 
 @pytest.mark.parametrize('dx,dy,blocked', [
-    (0, -1.5, True), (0, 1.5, True),
-    (0.499, -1.999, True), (-0.499, 1.999, True),
-    (0.5, 0, False), (-0.5, 0, False),
-    (0, -2, False), (0, 2, False),
+    (0, -2.5, True), (0, 1.5, False),
+    (0.499, -2.799, True), (-0.499, 1.199, True),
+    (0.5, -0.8, False), (-0.5, -0.8, False),
+    (0, -2.8, False), (0, 1.2, False),
+    (0, -2.801, False), (0, 1.201, False),
 ])
-def test_monster_square_keeps_width_and_doubles_height(dx, dy, blocked):
+def test_monster_square_shifted_up_boundary(dx, dy, blocked):
     safety = MonsterSafety()
     full(safety, actors=(actor(-2, 280),))
     u, v = cell_coordinates(280)
