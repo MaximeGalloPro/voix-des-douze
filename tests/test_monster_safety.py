@@ -26,7 +26,7 @@ def move(safety, entity, cells, packed=True):
 
 def test_groups_are_distinguished_from_players_npcs_and_reset_per_map():
     safety = MonsterSafety()
-    full(safety, actors=(actor(12, 280, 3), actor(-1, 280, 4), actor(-2, 300)))
+    full(safety, actors=(actor(12, 500, 3), actor(-1, 280, 4), actor(-2, 300)))
     sent = []
     safety.send(1, cell_coordinates(280), lambda: sent.append('safe'))
     assert sent == ['safe']
@@ -135,3 +135,53 @@ def test_no_sync_and_no_projection_cannot_send_even_on_empty_resource_map(assist
     with pytest.raises(RuntimeError, match='repères'):
         c.guarded_send(1, QPointF(1, 1), w.screen().geometry())
     assert clicks == []
+
+
+def test_player_feet_head_and_movement_are_protected_without_guessing_self_identity():
+    safety = MonsterSafety()
+    full(safety, actors=(actor(12, 65, 3),))
+    x, y = cell_coordinates(65)
+    for point in ((x, y), (x - 2, y + 2)):
+        with pytest.raises(RuntimeError, match='Protection personnage'):
+            safety.send(1, point, lambda: pytest.fail('player menu could open'))
+    move(safety, 12, [65, 24])
+    for cell in path_cells([65, 24]):
+        with pytest.raises(RuntimeError, match='Protection personnage'):
+            safety.send(1, cell_coordinates(cell), lambda: pytest.fail('animation path unprotected'))
+    sent = []
+    safety.send(1, (x + 5, y + 5), lambda: sent.append('clear'))
+    full(safety, 2)
+    safety.send(2, (x, y), lambda: sent.append('next map'))
+    assert sent == ['clear', 'next map']
+
+
+def test_idle_skips_player_overlap_then_harvests_elsewhere_and_leaves(route):
+    from voix_des_douze.harvest import Resource, ResourceSnapshot
+    w, c, clicks, errors, memory = route
+    first = Resource(1, 38, 'Blé', 280, 0, True)
+    second = Resource(2, 38, 'Blé', 400, 0, True)
+    c.update(ResourceSnapshot(1, True, (first, second), 0, 'jnj'))
+    full(c.monsters, actors=(actor(12, 280, 3),))
+    c.toggle_idle()
+    c.idle_origin = 280
+    run_next(c)
+    assert clicks == []
+    assert c.idle and c.idle_target is None and c.idle_skipped == {1}
+    assert not c.idle_timeout.isActive()
+    run_next(c)
+    assert c.idle_target == 2 and len(clicks) == 1
+    depleted = Resource(2, 38, 'Blé', 400, 1, True)
+    c.update(ResourceSnapshot(1, False, (first, depleted), 0, 'itw'))
+    run_next(c)
+    assert c.journey.expected == 2 and len(clicks) == 2
+    assert errors == []
+
+
+def test_monster_refusal_still_stops_idle_even_if_a_player_also_overlaps(route):
+    w, c, clicks, errors, memory = route
+    c.update(snapshot(1))
+    full(c.monsters, actors=(actor(12, 280, 3), actor(-2, 280)))
+    c.toggle_idle()
+    run_next(c)
+    assert not c.idle and clicks == []
+    assert 'anti-combat' in errors[-1]

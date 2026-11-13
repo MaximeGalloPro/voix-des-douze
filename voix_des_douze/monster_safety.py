@@ -1,4 +1,4 @@
-"""Fail-closed ground-distance guard for the observed 3.7.13.17 actors."""
+"""Fail-closed monster distance and conservative player-sprite click guards."""
 from threading import RLock
 
 from .network_protocol import ProtocolError, fields, field, integer, signed, varint
@@ -50,6 +50,10 @@ def path_cells(path):
     return result
 
 
+class PlayerOverlap(RuntimeError):
+    """The target may hit a player sprite rather than the ground."""
+
+
 class MonsterSafety:
     def __init__(self):
         self.lock = RLock()
@@ -61,6 +65,8 @@ class MonsterSafety:
             self.synchronized = False
             self.groups = {}
             self.reserved = set()
+            self.players = {}
+            self.player_paths = {}
 
     def handle(self, direction, key, raw):
         if direction == 'client' and key == 'joc':
@@ -91,6 +97,19 @@ class MonsterSafety:
                 info = fields(field(actor, 3, b''))
                 role = fields(field(info, 1, b''))
                 entity = integer(actor, 1)
+                if field(role, 3) is not None:
+                    position = fields(field(actor, 2, b''))
+                    cell = integer(position, 3)
+                    if entity is None or cell is None or not 0 <= cell < 560:
+                        raise ProtocolError("Joueur sans identifiant ou position valide.")
+                    entity = signed(entity)
+                    if entity in self.groups:
+                        raise ProtocolError("Transformation de monstre non synchronisée.")
+                    self.players[entity] = cell
+                    self.player_paths[entity] = {cell}
+                    continue
+                if entity is not None and signed(entity) in self.players:
+                    raise ProtocolError("Transformation de joueur non synchronisée.")
                 if field(role, 5) is None:
                     # A known monster becoming another actor type is unverified.
                     if entity is not None and signed(entity) in self.groups:
@@ -108,11 +127,18 @@ class MonsterSafety:
                 self.synchronized = True
         else:
             entity = integer(body, 4)
-            if entity is None or signed(entity) not in self.groups:
+            if entity is None or (signed(entity) not in self.groups and signed(entity) not in self.players):
                 return
             entity = signed(entity)
             path = unpack_ids(body, 1)
             cells = path_cells(path)
+            if entity in self.players:
+                if path[0] != self.players[entity]:
+                    raise ProtocolError("Position de joueur discontinue ; changez de carte pour resynchroniser.")
+                self.players[entity] = path[-1]
+                # The next movement confirms the previous endpoint, not its arrival time.
+                self.player_paths[entity] = cells
+                return
             if path[0] != self.groups[entity]:
                 raise ProtocolError("Position de monstre discontinue ; changez de carte pour resynchroniser.")
             self.groups[entity] = path[-1]
@@ -129,4 +155,13 @@ class MonsterSafety:
             if any(abs(x - u) + abs(y - v) < 2 - 1e-9 for cell in self.reserved
                    for u, v in (_COORDINATES[cell],)):
                 raise RuntimeError("Protection anti-combat : clic annulé à moins de 2 cases d’un groupe ou de son trajet observé sur cette carte.")
+            # Project a broad upright sprite envelope: one tile-width on each side,
+            # two tile-widths above the feet and half a tile-width below.
+            for cells in self.player_paths.values():
+                for cell in cells:
+                    u, v = _COORDINATES[cell]
+                    dx = (x + y - u - v) / 2
+                    dy = x - y - u + v
+                    if abs(dx) <= 1 + 1e-9 and -8 - 1e-9 <= dy <= 2 + 1e-9:
+                        raise PlayerOverlap("Protection personnage : cible trop proche du dessin d’un joueur ; clic non envoyé.")
             callback()

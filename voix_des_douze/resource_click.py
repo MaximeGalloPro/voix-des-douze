@@ -19,7 +19,7 @@ from .overlay import ForegroundProcess, cell_point, fullscreen_transform, screen
 from .idle_hint import IdleHint
 from .settings import data_directory
 from .idle_route import IdleJourney
-from .monster_safety import MonsterSafety, cell_coordinates
+from .monster_safety import MonsterSafety, PlayerOverlap, cell_coordinates
 
 
 def idle_nearest(cells, origin):
@@ -275,7 +275,10 @@ class FirstResourceClick(QObject):
         if not self.click(manual=True, element_id=element_id):
             self.stop_idle()
             return
-        self.idle_timeout.start()
+        if self.idle_target is not None:
+            self.idle_timeout.start()
+        else:
+            self.idle_timer.start(0)
 
     def idle_expired(self):
         if not self.idle or self.idle_target is None:
@@ -477,6 +480,15 @@ class FirstResourceClick(QObject):
             w.overlay.show_click_target(point, geometry)
         try:
             self.guarded_send(snapshot.map_id, point, geometry)
+        except PlayerOverlap as exc:
+            self.record("cible ignorée", élément=resource.element_id, raison=str(exc))
+            if self.idle and element_id == self.idle_target:
+                self.idle_skipped.add(element_id)
+                self.idle_target = None
+                self.idle_changed.emit("Idle · cible masquée par un joueur · ignorée pour cette visite")
+                return True
+            w.show_error(str(exc))
+            return
         except RuntimeError as exc:
             self.record("bloqué", raison=str(exc))
             w.show_error(str(exc))
