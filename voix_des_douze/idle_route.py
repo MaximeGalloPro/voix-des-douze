@@ -111,6 +111,9 @@ class IdleJourney(QObject):
         self.stops = tuple(configuration['maps'])
         self.graph = WalkingGraph(memory)
         self.legs = self.graph.loop(self.stops)
+        if snapshot.map_id not in self.stops and not any(
+                snapshot.map_id in leg for leg in self.legs.values()):
+            return
         self.exit_screen()
         self.index = self.stops.index(snapshot.map_id) if snapshot.map_id in self.stops else 0
         self.path = deque(self.graph.path(snapshot.map_id, self.stops[self.index]))

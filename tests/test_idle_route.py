@@ -111,6 +111,24 @@ def test_starts_outside_stops_and_repeated_states_do_not_post_twice(route):
     assert errors == []
 
 
+
+@pytest.mark.parametrize('start_map', [5, 9])
+def test_outside_circuit_stays_local_even_with_a_path_to_the_run(route, start_map):
+    w, c, clicks, errors, memory = route
+    memory.catalog['maps']['5'] = {'world_id': 1, 'x': 0, 'y': 1}
+    memory.observe_transition(5, 1)
+    c.update(snapshot(start_map))
+    c.toggle_idle()
+    run_next(c)
+    assert c.idle and not c.journey.active
+    assert c.idle_target == 1
+    c.update(snapshot(start_map, state=1))
+    run_next(c)
+    assert c.idle and c.idle_target is None
+    assert len(clicks) == 1
+    assert c.journey.expected is None
+    assert errors == []
+
 @pytest.mark.parametrize('failure', ['timeout', 'unexpected', 'focus', 'pause', 'clear', 'calibration', 'profile', 'shortcut'])
 def test_inflight_exit_stops_without_retry_or_arrival_click(route, failure):
     w, c, clicks, errors, memory = route
