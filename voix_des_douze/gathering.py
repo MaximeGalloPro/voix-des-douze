@@ -62,8 +62,9 @@ class Destination:
 
 
 class GatheringMemory:
-    def __init__(self, path, catalog=None, clock=time.time):
+    def __init__(self, path, catalog=None, clock=time.time, duration_clock=None):
         self.clock = clock
+        self.duration_clock = duration_clock or (time.monotonic if clock is time.time else clock)
         if catalog is None:
             catalog = json.loads((Path(__file__).resolve().parents[1] / "models/compass_catalog.json").read_text(encoding="utf-8"))
         if catalog["game_version"] != VERSION:
@@ -140,8 +141,10 @@ class GatheringMemory:
 
     def observe(self, snapshot):
         if not self.profile:
-            return
+            return []
         now = self.clock()
+        tick = self.duration_clock()
+        measured = []
         if self.current != snapshot.map_id:
             self.previous = None
             self.cuts.clear()
@@ -151,19 +154,24 @@ class GatheringMemory:
             self.db.execute("INSERT OR IGNORE INTO visited_maps VALUES (?,?)", (self.profile, snapshot.map_id))
             for r in snapshot.resources:
                 old = previous.get(r.element_id)
+                if (r.state not in (0, 1) or old is None
+                        or old.type_id != r.type_id):
+                    self.cuts.pop(r.element_id, None)
                 record = self.db.execute("SELECT cut,enabled FROM resources WHERE profile=? AND map_id=? AND element_id=?",
                                          (self.profile, snapshot.map_id, r.element_id)).fetchone()
                 eligible = r.harvest_enabled if r.state == 0 else (r.harvest_enabled or bool(record and record["enabled"]))
                 cut = record["cut"] if record else None
                 if r.state == 1 and old is not None and old.state in (0, 2):
                     cut = now
-                    self.cuts[r.element_id] = now
+                    self.cuts[r.element_id] = tick
                     self.db.execute("INSERT INTO harvests VALUES (?,?,?,?,?)",
                                     (self.profile, snapshot.map_id, r.element_id, r.type_id, now))
                 elif r.state == 0:
                     started = self.cuts.pop(r.element_id, None)
-                    if old is not None and old.state == 1 and started is not None and now > started:
-                        self.db.execute("INSERT INTO samples VALUES (?,?,?,?)", (self.profile, r.type_id, now-started, now))
+                    if old is not None and old.state == 1 and started is not None and tick > started:
+                        seconds = tick - started
+                        self.db.execute("INSERT INTO samples VALUES (?,?,?,?)", (self.profile, r.type_id, seconds, now))
+                        measured.append((r, seconds))
                     cut = None
                 if r.state == 1 and cut is not None:
                     if r.type_id not in estimates:
@@ -186,6 +194,7 @@ class GatheringMemory:
         self.current = snapshot.map_id
         self.previous = snapshot
         self.revision += 1
+        return measured
 
     def estimate(self, type_id):
         rows = self.db.execute("SELECT seconds FROM samples WHERE profile=? AND type_id=? ORDER BY observed DESC LIMIT 20",

@@ -193,10 +193,22 @@ class Compass:
         self.timer.start()
 
     def observe(self, snapshot):
-        if self.window.store.settings.compass_enabled:
+        click = getattr(self.window, "resource_click", None)
+        idle = click is not None and click.idle
+        if self.window.store.settings.compass_enabled or idle:
             self.journal.arrival(self.memory.profile, snapshot, self.memory.clock())
-            self.memory.observe(snapshot)
+            measured = self.memory.observe(snapshot)
+            if idle:
+                if not self.memory.profile:
+                    self.window.idle_measurement.setText("Mesure : choisissez un profil serveur / personnage dans Boussole.")
+                for resource, seconds in measured:
+                    median, source = self.memory.estimate(resource.type_id)
+                    self.window.idle_measurement.setText(
+                        f"Repousse observée : {resource.name} · élément {resource.element_id} · "
+                        f"{seconds:.1f} s · médiane {median:.1f} s · {source}")
             self.refresh()
+        else:
+            self.memory.reset_session()
 
     def transition(self, pair):
         if self.window.store.settings.compass_enabled:

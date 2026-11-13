@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         self.resource_click = FirstResourceClick(self)
         self.shutting_down = False
         self.build_ui()
-        self.resource_click.idle_changed.connect(self.idle_status.setText)
+        self.resource_click.idle_changed.connect(self.idle_state_changed)
         self.compass = Compass(self)
         self.compass_settings = CompassSettings(self.compass)
         self.compass_layout.addWidget(self.compass_settings)
@@ -181,6 +181,9 @@ class MainWindow(QMainWindow):
         self.idle_binding = QLabel()
         idle_controls.addWidget(self.idle_binding)
         resource_layout.addLayout(idle_controls)
+        self.idle_measurement = QLabel("Repousse : en attente d’un cycle complet observé.")
+        self.idle_measurement.setWordWrap(True)
+        resource_layout.addWidget(self.idle_measurement)
         map_layout.addWidget(resource_box)
         map_layout.addStretch()
         voice_controls = QHBoxLayout()
@@ -717,6 +720,13 @@ class MainWindow(QMainWindow):
         voice = self.voice_map.get(self.voice_combo.currentData())
         if voice:
             self.playback.submit([Utterance("Bonjour, je vous accompagne dans le Monde des Douze. Écoutez ma voix avant de me choisir.", voice)], self.speed.value())
+
+    def idle_state_changed(self, text):
+        self.idle_status.setText(text)
+        if not self.store.settings.compass_enabled:
+            self.compass.memory.reset_session()
+            if self.resource_click.idle and self.resource_click.snapshot is not None:
+                self.compass.memory.observe(self.resource_click.snapshot)
 
     def edit_shortcuts(self):
         dialog = QDialog(self)
