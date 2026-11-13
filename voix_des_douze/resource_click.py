@@ -19,13 +19,12 @@ from .overlay import ForegroundProcess, cell_point, fullscreen_transform, screen
 from .idle_hint import IdleHint
 from .settings import data_directory
 from .idle_route import IdleJourney
+from .monster_safety import MonsterSafety, cell_coordinates
 
 
 def idle_nearest(cells, origin):
     """Choose by diamond-grid distance, not screen pixels or random deadlines."""
-    def coordinates(cell):
-        row, column = divmod(cell, 14)
-        return column + (row + 1) // 2, column - row // 2
+    coordinates = cell_coordinates
 
     points = {element_id: coordinates(cell) for element_id, cell in cells.items()}
 
@@ -169,6 +168,7 @@ class FirstResourceClick(QObject):
         self.debug_path = None
         self.send = send if send is not None else MacClick(self.record)
         self.snapshot = None
+        self.monsters = MonsterSafety()
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setTimerType(Qt.PreciseTimer)
@@ -357,6 +357,7 @@ class FirstResourceClick(QObject):
         self.window.overlay.clear_click_target()
         self.record("annulation", raison="ressources effacées")
         self.snapshot = None
+        self.monsters.clear()
 
     def update(self, snapshot):
         previous = self.snapshot
@@ -404,6 +405,19 @@ class FirstResourceClick(QObject):
                 self.idle_pending[element_id] = now + random.randint(800, 1800) / 1000
             if self.idle_target is None and (self.idle_pending or self.journey.active):
                 self.idle_timer.start(0 if self.idle_pending else random.randint(800, 1800))
+
+    def guarded_send(self, map_id, point, geometry):
+        settings = self.window.store.settings
+        adjustment = settings.overlay_adjustments.get(settings.overlay_screen)
+        if adjustment is None:
+            raise RuntimeError("Protection anti-combat : réglez les repères avant tout clic.")
+        inverse, valid = fullscreen_transform(geometry, adjustment).inverted()
+        if not valid:
+            raise RuntimeError("Protection anti-combat : projection des cases invalide.")
+        local = inverse.map(point - QPointF(geometry.topLeft()))
+        coordinates = local.x() + local.y() / 2, local.x() - local.y() / 2
+        self.monsters.send(map_id, coordinates,
+                           lambda: self.send(self.window.overlay.pid, point, geometry))
 
     def click(self, manual=False, element_id=None):
         w = self.window
@@ -455,7 +469,7 @@ class FirstResourceClick(QObject):
         if self.file is not None:
             w.overlay.show_click_target(point, geometry)
         try:
-            self.send(w.overlay.pid, point, geometry)
+            self.guarded_send(snapshot.map_id, point, geometry)
         except RuntimeError as exc:
             self.record("bloqué", raison=str(exc))
             w.show_error(str(exc))

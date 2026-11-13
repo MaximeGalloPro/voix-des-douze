@@ -19,6 +19,7 @@ from .network_protocol import Catalog, Conversation, PacketReader, ProtocolError
 from .native.network_capture import game_connections
 from .harvest import HarvestTracker
 from .gathering import MapTransitions
+from .monster_safety import MonsterSafety
 
 
 @dataclass(frozen=True)
@@ -99,9 +100,10 @@ class NetworkSession:
     emit(kind, value) doit être un pont thread-safe (signal Qt). Aucun texte ni
     paquet n’est journalisé ; les données brutes ne quittent pas le FIFO privé.
     """
-    def __init__(self, client: Client, emit, invalidate, catalog_directory=None):
+    def __init__(self, client: Client, emit, invalidate, catalog_directory=None, *, monsters=None):
         self.client, self.emit, self.invalidate_audio = client, emit, invalidate
         self.catalog_directory = catalog_directory
+        self.monsters = monsters if monsters is not None else MonsterSafety()
         self.stop_event = threading.Event()
         self.state_lock = threading.RLock()
         self.revision = 0
@@ -112,6 +114,7 @@ class NetworkSession:
     def stop(self):
         with self.state_lock:
             self.stop_event.set()
+            self.monsters.clear()
             self.revision += 1
             if self.directory:
                 try:
@@ -161,6 +164,7 @@ class NetworkSession:
                                          lambda event: self.emit("map_timing", event))
 
             def handle(direction, key, raw):
+                self.monsters.handle(direction, key, raw)
                 transitions.handle(direction, key, raw)
                 state.handle(direction, key, raw)
                 harvest.handle(direction, key, raw)

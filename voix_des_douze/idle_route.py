@@ -151,7 +151,7 @@ class IdleJourney(QObject):
             point = sample_exit(profile, direction) + QPointF(geometry.topLeft())
             # Mark in flight before posting; no further action until full map confirmation.
             self.expected = target
-            self.owner.send(self.owner.window.overlay.pid, point, geometry)
+            self.owner.guarded_send(current, point, geometry)
         except (ValueError, RuntimeError) as exc:
             self.fail(str(exc))
             return

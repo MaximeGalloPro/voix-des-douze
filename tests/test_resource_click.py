@@ -11,6 +11,7 @@ from voix_des_douze.harvest import Resource, ResourceSnapshot
 from voix_des_douze.overlay import ResourceOverlay, screen_key
 from voix_des_douze.resource_click import FirstResourceClick
 from voix_des_douze.settings import Settings
+from test_network import num
 
 
 @pytest.fixture(scope="session")
@@ -20,7 +21,7 @@ def click_app():
 
 
 @pytest.fixture
-def assist(click_app):
+def assist(click_app, monkeypatch):
     w = QWidget()
     w.first_resource = QCheckBox(w)
     w.first_resource.setChecked(True)
@@ -37,6 +38,15 @@ def assist(click_app):
         overlay_screen=key, overlay_adjustments={key: [0, 0, 1]}))
     controller = FirstResourceClick(w, lambda *args: clicks.append(args))
     controller.timer.setInterval(10)
+    update = controller.update
+
+    def synchronized_update(snapshot):
+        # Model the full actor snapshot delivered before resource events.
+        if controller.monsters.map_id != snapshot.map_id:
+            controller.monsters.handle("server", "jnj", num(10, snapshot.map_id))
+        update(snapshot)
+
+    monkeypatch.setattr(controller, "update", synchronized_update)
     yield w, controller, clicks, errors
     controller.clear()
     controller.stop_debug()

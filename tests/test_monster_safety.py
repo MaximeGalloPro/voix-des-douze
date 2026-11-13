@@ -1,0 +1,137 @@
+"""Network identity, swept ground distance and final-dispatch combat protection."""
+import pytest
+from PySide6.QtCore import QPointF
+
+from test_network import blob, num, vint
+from test_resource_click import assist, click_app, snapshot
+from test_idle_route import route, run_next, empty
+from voix_des_douze.monster_safety import MonsterSafety, cell_coordinates, path_cells
+from voix_des_douze.network_protocol import ProtocolError
+from voix_des_douze.overlay import cell_point, fullscreen_transform
+
+
+def actor(entity, cell, variant=5):
+    return (num(1, entity) + blob(2, num(3, cell))
+            + blob(3, blob(1, blob(variant, b''))))
+
+
+def full(safety, map_id=1, actors=()):
+    safety.handle('server', 'jnj', num(10, map_id) + b''.join(blob(3, a) for a in actors))
+
+
+def move(safety, entity, cells, packed=True):
+    path = blob(1, b''.join(vint(c) for c in cells)) if packed else b''.join(num(1, c) for c in cells)
+    safety.handle('server', 'jnz', path + num(4, entity))
+
+
+def test_groups_are_distinguished_from_players_npcs_and_reset_per_map():
+    safety = MonsterSafety()
+    full(safety, actors=(actor(12, 280, 3), actor(-1, 280, 4), actor(-2, 300)))
+    sent = []
+    safety.send(1, cell_coordinates(280), lambda: sent.append('safe'))
+    assert sent == ['safe']
+    with pytest.raises(RuntimeError, match='moins de 2'):
+        safety.send(1, cell_coordinates(300), lambda: sent.append('unsafe'))
+    full(safety, 2)
+    safety.send(2, cell_coordinates(300), lambda: sent.append('new map'))
+    assert sent == ['safe', 'new map']
+    with pytest.raises(RuntimeError, match='non synchronisées'):
+        safety.send(1, cell_coordinates(280), lambda: sent.append('old map'))
+
+
+@pytest.mark.parametrize('packed', [True, False])
+def test_movement_reserves_intermediate_cells_and_does_not_guess_animation_end(packed):
+    safety = MonsterSafety()
+    full(safety, actors=(actor(-20002, 65),))
+    move(safety, -20002, [65, 24], packed)
+    assert len(path_cells([65, 24])) == 4
+    intermediate = path_cells([65, 24]) - {65, 24}
+    for cell in intermediate | {65, 24}:
+        with pytest.raises(RuntimeError):
+            safety.send(1, cell_coordinates(cell), lambda: pytest.fail('unsafe click'))
+    move(safety, -20002, [24, 53], packed)
+    with pytest.raises(RuntimeError):
+        safety.send(1, cell_coordinates(65), lambda: pytest.fail('old swept area expired'))
+
+
+@pytest.mark.parametrize('offset,blocked', [(0, True), (1, True), (1.999, True), (2, False), (3, False)])
+def test_two_case_boundary(offset, blocked):
+    safety = MonsterSafety()
+    full(safety, actors=(actor(-2, 280),))
+    x, y = cell_coordinates(280)
+    sent = []
+    if blocked:
+        with pytest.raises(RuntimeError):
+            safety.send(1, (x + offset, y), lambda: sent.append(True))
+        assert not sent
+    else:
+        safety.send(1, (x + offset, y), lambda: sent.append(True))
+        assert sent == [True]
+
+
+def test_new_group_and_invalid_updates_fail_closed_until_full_sync():
+    safety = MonsterSafety()
+    full(safety)
+    safety.handle('server', 'jns', blob(2, actor(-2, 280)))
+    with pytest.raises(RuntimeError):
+        safety.send(1, cell_coordinates(280), lambda: pytest.fail('new group ignored'))
+    with pytest.raises(ProtocolError):
+        move(safety, -2, [281, 282])
+    with pytest.raises(RuntimeError, match='non synchronisées'):
+        safety.send(1, cell_coordinates(500), lambda: pytest.fail('desync ignored'))
+    full(safety)
+    safety.handle('client', 'joc', num(2, 2))
+    with pytest.raises(RuntimeError, match='non synchronisées'):
+        safety.send(1, cell_coordinates(500), lambda: pytest.fail('departure ignored'))
+
+
+@pytest.mark.parametrize('mode', ['arrival', 'debug', 'idle'])
+def test_all_harvest_modes_recheck_monsters_at_dispatch(assist, tmp_path, mode):
+    w, c, clicks, errors = assist
+    c.update(snapshot(1))
+    c.update(snapshot(2))
+    if mode == 'debug':
+        c.start_debug(tmp_path)
+    if mode == 'idle':
+        c.toggle_idle()
+    # Actor arrives after target scheduling, before timer/shortcut dispatch.
+    c.monsters.handle('server', 'jns', blob(1, actor(-2, 280)))
+    if mode == 'debug':
+        c.manual_click()
+    elif mode == 'idle':
+        run_next(c)
+        assert not c.idle
+        assert not c.idle_timeout.isActive()
+    else:
+        c.timer.stop()
+        c.click()
+    assert clicks == []
+    assert any('Protection anti-combat' in error for error in errors)
+
+
+def test_exit_guard_checks_actual_randomized_point_and_stops_circuit(route, monkeypatch):
+    w, c, clicks, errors, memory = route
+    c.update(empty(1))
+    full(c.monsters, actors=(actor(-2, 280),))
+    geometry = w.screen().geometry()
+    point = fullscreen_transform(geometry, [0, 0, 1]).map(cell_point(280))
+    monkeypatch.setattr('voix_des_douze.idle_route.sample_exit', lambda *args: point)
+    c.toggle_idle()
+    run_next(c)
+    assert clicks == []
+    assert not c.idle and c.journey.expected is None
+    assert not c.journey.timeout.isActive()
+    assert any('Protection anti-combat' in error for error in errors)
+
+
+def test_no_sync_and_no_projection_cannot_send_even_on_empty_resource_map(assist):
+    w, c, clicks, errors = assist
+    c.update(snapshot(1))
+    c.monsters.clear()
+    assert not c.click(manual=True)
+    assert clicks == []
+    full(c.monsters)
+    w.store.settings.overlay_adjustments.clear()
+    with pytest.raises(RuntimeError, match='repères'):
+        c.guarded_send(1, QPointF(1, 1), w.screen().geometry())
+    assert clicks == []

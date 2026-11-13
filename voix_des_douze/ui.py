@@ -514,7 +514,8 @@ class MainWindow(QMainWindow):
         self.overlay.pid = client.pid
         self.listener = NetworkSession(client,
             lambda kind, value: self.events.network.emit(generation, kind, value) if not self.shutting_down else None,
-            lambda: self.playback.cancel() if generation == self.generation else None)
+            lambda: self.playback.cancel() if generation == self.generation else None,
+            monsters=self.resource_click.monsters)
 
     def stop(self):
         self.accepting = False
