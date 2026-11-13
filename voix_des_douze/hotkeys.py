@@ -15,8 +15,8 @@ KEYS = {"F1": 122, "F2": 120, "F3": 99, "F4": 118, "F5": 96, "F6": 97,
         "F7": 98, "F8": 100, "F9": 101, "F10": 109, "F11": 103, "F12": 111}
 
 
-def colon_binding(lib):
-    """Resolve ':' in the current macOS layout, including Shift when required."""
+def character_binding(lib, character):
+    """Resolve a character in the current macOS layout, including Shift."""
     lib.TISCopyCurrentKeyboardLayoutInputSource.restype = C.c_void_p
     lib.TISGetInputSourceProperty.argtypes = [C.c_void_p, C.c_void_p]
     lib.TISGetInputSourceProperty.restype = C.c_void_p
@@ -38,9 +38,9 @@ def colon_binding(lib):
                     chars = (C.c_uint16 * 8)()
                     result = lib.UCKeyTranslate(layout, key, 0, modifiers,
                         lib.LMGetKbdType(), 1, C.byref(dead), 8, C.byref(length), chars)
-                    if result == 0 and length.value == 1 and chars[0] == ord(":"):
+                    if result == 0 and length.value == 1 and chars[0] == ord(character):
                         return key, modifiers << 8
-        raise RuntimeError("Touche : introuvable dans la disposition clavier actuelle.")
+        raise RuntimeError(f"Touche {character} introuvable dans la disposition clavier actuelle.")
     finally:
         if source:
             lib.CFRelease(source)
@@ -80,23 +80,34 @@ class GlobalHotkeys:
                 self.callback(self.actions[identifier.id])
         return 0
 
-    def configure(self, bindings):
+    def configure(self, bindings, idle_enabled=True):
         for ref in self.refs:
             self.carbon.UnregisterEventHotKey(ref)
         self.refs.clear()
+        bindings = {action: key for action, key in bindings.items()
+                    if action != "idle" or idle_enabled}
         self.actions = list(bindings)
         errors = []
         for index, (action, key) in enumerate(bindings.items()):
             ref = C.c_void_p()
-            if key not in KEYS:
+            if action == "idle" and key == "=":
+                try:
+                    code, modifiers = character_binding(self.carbon, "=")
+                except RuntimeError as exc:
+                    errors.append(str(exc))
+                    continue
+                label = "="
+            elif key in KEYS:
+                code, modifiers = KEYS[key], 4096 | 2048
+                label = f"Contrôle+Option+{key}"
+            else:
                 errors.append(f"Touche inconnue : {key}")
                 continue
-            # Control + Option, never Command: no Qt modifier translation.
-            result = self.carbon.RegisterEventHotKey(KEYS[key], 4096 | 2048,
+            result = self.carbon.RegisterEventHotKey(code, modifiers,
                     HotKeyID(int.from_bytes(b"VDDZ", "big"), index),
                     self.carbon.GetApplicationEventTarget(), 0, C.byref(ref))
             if result:
-                errors.append(f"Contrôle+Option+{key} indisponible ({result})")
+                errors.append(f"{label} indisponible ({result})")
             else:
                 self.refs.append(ref)
         return errors
@@ -106,7 +117,7 @@ class GlobalHotkeys:
             self.carbon.UnregisterEventHotKey(self.debug_ref)
             self.debug_ref = C.c_void_p()
         if enabled:
-            key, modifiers = colon_binding(self.carbon)
+            key, modifiers = character_binding(self.carbon, ":")
             result = self.carbon.RegisterEventHotKey(key, modifiers,
                 HotKeyID(int.from_bytes(b"VDDZ", "big"), 1000),
                 self.carbon.GetApplicationEventTarget(), 0, C.byref(self.debug_ref))

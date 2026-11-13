@@ -28,6 +28,7 @@ class Settings:
     automatic: bool = True
     resource_sound: bool = True
     first_resource_click: bool = False
+    idle_shortcut_enabled: bool = True
     compass_enabled: bool = False
     compass_profile: str = ""
     compass_profiles: list[str] = field(default_factory=list)
@@ -40,7 +41,7 @@ class Settings:
     engine_defaults: dict[str, str] = field(default_factory=dict)
     engine_assignments: dict[str, dict[str, str]] = field(default_factory=dict)
     shortcuts: dict[str, str] = field(default_factory=lambda: {
-        "toggle": "F6", "stop": "F7", "replay": "F8", "idle": "F9"})
+        "toggle": "F6", "stop": "F7", "replay": "F8", "idle": "="})
     overlay_screen: str = ""
     overlay_adjustments: dict[str, list[float]] = field(default_factory=dict)
 
@@ -63,7 +64,9 @@ class Store:
                     raise ValueError("Volume ou vitesse hors limites")
                 if not all(isinstance(v, dict) for v in (s.assignments, s.shortcuts)):
                     raise ValueError("Configuration invalide")
-                s.shortcuts.setdefault("idle", "F9")
+                if s.shortcuts.get("idle", "F9") == "F9":
+                    s.shortcuts["idle"] = "="
+                    migrated = True
                 if s.engine not in ("piper", "sopro", "pocket"):
                     raise ValueError("Moteur vocal inconnu")
                 if not isinstance(s.engine_defaults, dict) or not isinstance(s.engine_assignments, dict):

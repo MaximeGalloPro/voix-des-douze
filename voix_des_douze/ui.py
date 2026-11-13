@@ -79,8 +79,9 @@ class MainWindow(QMainWindow):
         self.events.hotkey.connect(self.hotkey)
         self.reload_engine()
         self.hotkeys = GlobalHotkeys(self.events.hotkey.emit)
-        errors = self.hotkeys.configure(self.store.settings.shortcuts)
-        self.idle_binding.setText(f"Contrôle + Option + {self.store.settings.shortcuts['idle']}")
+        errors = self.hotkeys.configure(self.store.settings.shortcuts, self.store.settings.idle_shortcut_enabled)
+        self.idle_binding.setText("=" if self.store.settings.shortcuts["idle"] == "="
+                                  else f"Contrôle + Option + {self.store.settings.shortcuts['idle']}")
         if errors:
             self.show_error(" ; ".join(errors))
         elif not self.voices:
@@ -175,6 +176,10 @@ class MainWindow(QMainWindow):
         self.resource_click_debug_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         resource_layout.addWidget(self.resource_click_debug_status)
         idle_controls = QHBoxLayout()
+        self.idle_shortcut_enabled = QCheckBox("Activer le raccourci idle")
+        self.idle_shortcut_enabled.setChecked(self.store.settings.idle_shortcut_enabled)
+        self.idle_shortcut_enabled.toggled.connect(self.toggle_idle_shortcut)
+        idle_controls.addWidget(self.idle_shortcut_enabled)
         self.idle_status = QLabel("Idle désactivé")
         idle_controls.addWidget(self.idle_status)
         self.button(idle_controls, "Raccourci idle…", self.edit_shortcuts)
@@ -728,18 +733,32 @@ class MainWindow(QMainWindow):
             if self.resource_click.idle and self.resource_click.snapshot is not None:
                 self.compass.memory.observe(self.resource_click.snapshot)
 
+    def toggle_idle_shortcut(self, enabled):
+        self.store.settings.idle_shortcut_enabled = enabled
+        if not enabled:
+            self.resource_click.stop_idle()
+        errors = self.hotkeys.configure(self.store.settings.shortcuts, enabled)
+        try:
+            self.store.save()
+        except OSError as exc:
+            self.show_error(f"Enregistrement impossible : {exc}")
+        if errors:
+            self.show_error(" ; ".join(errors))
+
     def edit_shortcuts(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("Raccourcis globaux — Contrôle + Option + touche")
+        dialog.setWindowTitle("Raccourcis globaux")
         layout = QFormLayout(dialog)
         combos = {}
         for key, label in [("toggle", "Suspendre / reprendre"), ("stop", "Arrêter"), ("replay", "Lire / relire"), ("idle", "Activer / désactiver idle (Carte)")]:
             combo = QComboBox()
             combo.addItems(list(KEYS))
+            if key == "idle":
+                combo.insertItem(0, "=")
             combo.setCurrentText(self.store.settings.shortcuts[key])
             combos[key] = combo
             layout.addRow(label, combo)
-        layout.addRow(QLabel("Touches F1–F12 : Fn peut être nécessaire."))
+        layout.addRow(QLabel("= : touche seule pour idle. F1–F12 : Contrôle + Option (Fn peut être nécessaire)."))
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
@@ -749,11 +768,11 @@ class MainWindow(QMainWindow):
             if len(set(bindings.values())) != len(bindings):
                 self.show_error("Choisissez des touches différentes.")
                 return
-            errors = self.hotkeys.configure(bindings)
+            errors = self.hotkeys.configure(bindings, self.store.settings.idle_shortcut_enabled)
             self.store.settings.shortcuts = bindings
             self.store.save()
-            self.idle_binding.setText(f"Contrôle + Option + {bindings['idle']}")
-            self.status.setText(" ; ".join(errors) if errors else "Raccourcis globaux enregistrés (Contrôle + Option).")
+            self.idle_binding.setText("=" if bindings["idle"] == "=" else f"Contrôle + Option + {bindings['idle']}")
+            self.status.setText(" ; ".join(errors) if errors else "Raccourcis globaux enregistrés.")
 
     def toggle_resource_click_debug(self, enabled):
         try:
@@ -779,6 +798,8 @@ class MainWindow(QMainWindow):
             self.show_error(str(exc))
 
     def hotkey(self, action):
+        if action == "idle" and not self.store.settings.idle_shortcut_enabled:
+            return
         {"toggle": self.toggle_pause, "stop": self.stop, "replay": self.replay,
          "resource_debug": self.resource_click.manual_click,
          "idle": self.resource_click.toggle_idle}[action]()
