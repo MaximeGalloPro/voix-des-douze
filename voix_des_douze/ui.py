@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
         self.resource_click = FirstResourceClick(self)
         self.shutting_down = False
         self.build_ui()
+        self.resource_click.idle_changed.connect(self.idle_status.setText)
         self.compass = Compass(self)
         self.compass_settings = CompassSettings(self.compass)
         self.compass_layout.addWidget(self.compass_settings)
@@ -79,6 +80,7 @@ class MainWindow(QMainWindow):
         self.reload_engine()
         self.hotkeys = GlobalHotkeys(self.events.hotkey.emit)
         errors = self.hotkeys.configure(self.store.settings.shortcuts)
+        self.idle_binding.setText(f"Contrôle + Option + {self.store.settings.shortcuts['idle']}")
         if errors:
             self.show_error(" ; ".join(errors))
         elif not self.voices:
@@ -172,6 +174,13 @@ class MainWindow(QMainWindow):
         self.resource_click_debug_status.setWordWrap(True)
         self.resource_click_debug_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         resource_layout.addWidget(self.resource_click_debug_status)
+        idle_controls = QHBoxLayout()
+        self.idle_status = QLabel("Idle désactivé")
+        idle_controls.addWidget(self.idle_status)
+        self.button(idle_controls, "Raccourci idle…", self.edit_shortcuts)
+        self.idle_binding = QLabel()
+        idle_controls.addWidget(self.idle_binding)
+        resource_layout.addLayout(idle_controls)
         map_layout.addWidget(resource_box)
         map_layout.addStretch()
         voice_controls = QHBoxLayout()
@@ -714,13 +723,13 @@ class MainWindow(QMainWindow):
         dialog.setWindowTitle("Raccourcis globaux — Contrôle + Option + touche")
         layout = QFormLayout(dialog)
         combos = {}
-        for key, label in [("toggle", "Suspendre / reprendre"), ("stop", "Arrêter"), ("replay", "Lire / relire")]:
+        for key, label in [("toggle", "Suspendre / reprendre"), ("stop", "Arrêter"), ("replay", "Lire / relire"), ("idle", "Activer / désactiver idle (Carte)")]:
             combo = QComboBox()
             combo.addItems(list(KEYS))
             combo.setCurrentText(self.store.settings.shortcuts[key])
             combos[key] = combo
             layout.addRow(label, combo)
-        layout.addRow(QLabel("Touches F1–F12 : Fn peut être nécessaire.\nAucune frappe de jeu n’est observée ou automatisée."))
+        layout.addRow(QLabel("Touches F1–F12 : Fn peut être nécessaire."))
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
@@ -728,11 +737,12 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             bindings = {key: combo.currentText() for key, combo in combos.items()}
             if len(set(bindings.values())) != len(bindings):
-                self.show_error("Choisissez trois touches différentes.")
+                self.show_error("Choisissez des touches différentes.")
                 return
             errors = self.hotkeys.configure(bindings)
             self.store.settings.shortcuts = bindings
             self.store.save()
+            self.idle_binding.setText(f"Contrôle + Option + {bindings['idle']}")
             self.status.setText(" ; ".join(errors) if errors else "Raccourcis globaux enregistrés (Contrôle + Option).")
 
     def toggle_resource_click_debug(self, enabled):
@@ -760,7 +770,8 @@ class MainWindow(QMainWindow):
 
     def hotkey(self, action):
         {"toggle": self.toggle_pause, "stop": self.stop, "replay": self.replay,
-         "resource_debug": self.resource_click.manual_click}[action]()
+         "resource_debug": self.resource_click.manual_click,
+         "idle": self.resource_click.toggle_idle}[action]()
 
     def show_error(self, message):
         self.status.setText(f"Attention : {message}")

@@ -276,3 +276,53 @@ def test_debug_sequence_cancellation_discards_remaining_targets(assist, tmp_path
     assert not c.debug_targets
     c.debug_next()
     assert len(clicks) == 1
+
+
+def test_idle_waits_for_new_availability_and_does_not_repeat(assist, monkeypatch):
+    w, c, clicks, errors = assist
+    now = [100.0]
+    monkeypatch.setattr("voix_des_douze.resource_click.time.monotonic", lambda: now[0])
+    monkeypatch.setattr("voix_des_douze.resource_click.random.randint", lambda a, b: 1200)
+    c.update(snapshot(1, state=1))
+    c.toggle_idle()
+    c.update(snapshot(1))
+    assert c.idle_pending == {1: 101.2}
+    c.idle_next()
+    assert clicks == []
+    now[0] = 101.2
+    c.idle_next()
+    assert len(clicks) == 1
+    c.update(snapshot(1))
+    c.idle_next()
+    assert len(clicks) == 1
+    c.update(snapshot(1, state=1))
+    c.update(snapshot(1))
+    now[0] = 102.4
+    c.idle_next()
+    assert len(clicks) == 2
+    assert errors == []
+
+
+@pytest.mark.parametrize("action", ["map", "unavailable", "toggle", "clear", "focus"])
+def test_idle_discards_pending_clicks(assist, action):
+    w, c, clicks, errors = assist
+    w.first_resource.setChecked(False)
+    c.update(snapshot(1, state=1))
+    c.toggle_idle()
+    c.update(snapshot(1))
+    if action == "map":
+        c.update(snapshot(2))
+    elif action == "unavailable":
+        c.update(snapshot(1, enabled=False))
+    elif action == "toggle":
+        c.toggle_idle()
+    elif action == "clear":
+        c.clear()
+    else:
+        w.overlay.foreground = lambda: 456
+        c.idle_pending[1] = 0
+    c.idle_next()
+    assert clicks == []
+    assert not c.idle_pending
+    if action != "unavailable":
+        assert not c.idle

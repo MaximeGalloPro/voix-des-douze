@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import deque
 import ctypes as C
 import json
+import math
 import os
 from pathlib import Path
 import plistlib
@@ -12,7 +13,7 @@ import sys
 import tempfile
 import time
 
-from PySide6.QtCore import QObject, QPointF, Qt, QTimer
+from PySide6.QtCore import QObject, QPointF, Qt, QTimer, Signal
 
 from .overlay import ForegroundProcess, cell_point, fullscreen_transform, screen_key
 from .settings import data_directory
@@ -121,6 +122,8 @@ class MacClick:
 
 
 class FirstResourceClick(QObject):
+    idle_changed = Signal(str)
+
     def __init__(self, window, send=None):
         super().__init__(window)
         self.window = window
@@ -137,6 +140,47 @@ class FirstResourceClick(QObject):
         self.debug_timer.setTimerType(Qt.PreciseTimer)
         self.debug_timer.timeout.connect(self.debug_next)
         self.timer.timeout.connect(self.click)
+        self.idle = False
+        self.idle_pending = {}
+        self.idle_timer = QTimer(self)
+        self.idle_timer.setSingleShot(True)
+        self.idle_timer.setTimerType(Qt.PreciseTimer)
+        self.idle_timer.timeout.connect(self.idle_next)
+
+    def stop_idle(self):
+        self.idle = False
+        self.idle_timer.stop()
+        self.idle_pending.clear()
+        self.idle_changed.emit("Idle désactivé")
+
+    def toggle_idle(self):
+        if self.idle:
+            self.stop_idle()
+            return
+        w = self.window
+        if (self.snapshot is None or not w.accepting or w.paused
+                or w.overlay.pid is None or w.overlay.foreground() != w.overlay.pid):
+            w.show_error("Idle : synchronisez une carte et gardez Dofus au premier plan pendant l’écoute.")
+            return
+        self.timer.stop()
+        self.cancel_debug_sequence()
+        self.idle = True
+        self.idle_changed.emit("Idle actif · attente d’apparition · 800–1 800 ms")
+
+    def idle_next(self):
+        if not self.idle or not self.idle_pending:
+            return
+        element_id = min(self.idle_pending, key=self.idle_pending.get)
+        remaining = self.idle_pending[element_id] - time.monotonic()
+        if remaining > 0:
+            self.idle_timer.start(max(1, math.ceil(remaining * 1000)))
+            return
+        del self.idle_pending[element_id]
+        if not self.click(manual=True, element_id=element_id):
+            self.stop_idle()
+            return
+        if self.idle_pending:
+            self.idle_timer.start(0)
 
     def record(self, stage, **fields):
         if self.file is None:
@@ -169,6 +213,7 @@ class FirstResourceClick(QObject):
             self.file = None
 
     def manual_click(self):
+        self.stop_idle()
         if self.file is None:
             return
         if self.debug_timer.isActive() or self.debug_targets:
@@ -206,6 +251,7 @@ class FirstResourceClick(QObject):
             return
 
     def clear(self):
+        self.stop_idle()
         self.cancel_debug_sequence()
         self.timer.stop()
         self.window.overlay.clear_click_target()
@@ -219,6 +265,7 @@ class FirstResourceClick(QObject):
             {"élément": r.element_id, "case": r.cell, "état": r.state, "récoltable": r.harvestable}
             for r in snapshot.resources])
         if previous is None or previous.map_id != snapshot.map_id:
+            self.stop_idle()
             self.cancel_debug_sequence()
             self.window.overlay.clear_click_target()
             self.timer.stop()
@@ -226,6 +273,16 @@ class FirstResourceClick(QObject):
             if previous is not None and self.window.first_resource.isChecked():
                 self.timer.start(random.randint(700, 850))
                 self.record("arrivée programmée", délai_ms=self.timer.interval())
+        elif self.idle:
+            before = {r.element_id for r in previous.resources if r.harvestable}
+            available = {r.element_id for r in snapshot.resources if r.harvestable}
+            for element_id in self.idle_pending.keys() - available:
+                del self.idle_pending[element_id]
+            now = time.monotonic()
+            for element_id in available - before:
+                self.idle_pending[element_id] = now + random.randint(800, 1800) / 1000
+            if self.idle_pending:
+                self.idle_timer.start(0)
 
     def click(self, manual=False, element_id=None):
         w = self.window

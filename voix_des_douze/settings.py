@@ -40,7 +40,7 @@ class Settings:
     engine_defaults: dict[str, str] = field(default_factory=dict)
     engine_assignments: dict[str, dict[str, str]] = field(default_factory=dict)
     shortcuts: dict[str, str] = field(default_factory=lambda: {
-        "toggle": "F6", "stop": "F7", "replay": "F8"})
+        "toggle": "F6", "stop": "F7", "replay": "F8", "idle": "F9"})
     overlay_screen: str = ""
     overlay_adjustments: dict[str, list[float]] = field(default_factory=dict)
 
@@ -63,6 +63,7 @@ class Store:
                     raise ValueError("Volume ou vitesse hors limites")
                 if not all(isinstance(v, dict) for v in (s.assignments, s.shortcuts)):
                     raise ValueError("Configuration invalide")
+                s.shortcuts.setdefault("idle", "F9")
                 if s.engine not in ("piper", "sopro", "pocket"):
                     raise ValueError("Moteur vocal inconnu")
                 if not isinstance(s.engine_defaults, dict) or not isinstance(s.engine_assignments, dict):
