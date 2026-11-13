@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QDialog, QPushButton
 
 from test_resource_click import assist, click_app, snapshot
 from voix_des_douze.gathering import GatheringMemory
-from voix_des_douze.harvest import ResourceSnapshot
+from voix_des_douze.harvest import Resource, ResourceSnapshot
 from voix_des_douze.idle_route import RouteEditor, WalkingGraph
 from voix_des_douze.network_protocol import VERSION
 from voix_des_douze.settings import Store
@@ -201,16 +201,58 @@ def test_graph_uses_directed_profile_scoped_walks_only(route):
         WalkingGraph(memory).path(1, 4)
 
 
-def test_failed_harvest_cannot_be_treated_as_an_empty_map(route):
+@pytest.mark.parametrize('state', [0, 2])
+def test_last_failed_harvest_continues_loop_and_is_retried_next_visit(route, state):
     w, c, clicks, errors, memory = route
     c.update(snapshot(1))
     c.toggle_idle()
     run_next(c)
+    c.update(snapshot(1, state=state))
     c.idle_expired()
-    assert not c.idle
+    assert c.idle and c.journey.active
+    assert c.journey.expected == 2
+    assert c.idle_skipped == {1}
+    assert len(clicks) == 2  # One harvest attempt, then the exit.
+    c.update(snapshot(1))
+    run_next(c)
+    assert len(clicks) == 2  # Repeated availability cannot retry the failed target.
+    for map_id, following in ((2, 3), (3, 4), (4, 3), (3, 2), (2, 1)):
+        c.update(empty(map_id))
+        run_next(c)
+        assert c.journey.expected == following
+    c.update(snapshot(1))
+    run_next(c)
+    assert c.idle_target == 1
+    assert not c.idle_skipped
+    assert errors == []
+
+
+def test_failed_harvest_is_ignored_until_departure_even_after_availability_changes(route):
+    w, c, clicks, errors, memory = route
+    first = snapshot(1).resources[0]
+    second = Resource(2, 38, 'Blé', 281, 0, True)
+    c.update(ResourceSnapshot(1, True, (first, second), 0, 'jnj'))
+    c.toggle_idle()
+    run_next(c)
+    failed = c.idle_target
+    other = 2 if failed == 1 else 1
+    c.idle_pending = dict.fromkeys(c.idle_pending, 0)
+    c.idle_expired()
+    assert c.idle_target == other
+    assert len(clicks) == 2
     assert c.journey.expected is None
-    assert len(clicks) == 1
-    assert 'Récolte non confirmée' in errors[-1]
+    # A later disappearance and respawn must not undo the visit's skip.
+    remaining = second if other == 2 else first
+    c.update(ResourceSnapshot(1, False, (remaining,), 0, 'itw'))
+    c.update(ResourceSnapshot(1, False, (first, second), 0, 'itw'))
+    assert failed not in c.idle_pending
+    depleted = Resource(other, 38, 'Blé', remaining.cell, 1, True)
+    blocked = first if failed == 1 else second
+    c.update(ResourceSnapshot(1, False, (blocked, depleted), 0, 'itw'))
+    run_next(c)
+    assert c.journey.expected == 2
+    assert len(clicks) == 3  # Both harvest attempts, then departure.
+    assert errors == []
 
 
 def test_recording_starts_at_next_map_and_finishes_with_name_per_profile(route):

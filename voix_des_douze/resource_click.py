@@ -180,6 +180,7 @@ class FirstResourceClick(QObject):
         self.timer.timeout.connect(self.click)
         self.idle = False
         self.idle_pending = {}
+        self.idle_skipped = set()
         self.idle_target = None
         self.idle_origin = None
         self.idle_timer = QTimer(self)
@@ -201,6 +202,7 @@ class FirstResourceClick(QObject):
         self.idle_timer.stop()
         self.idle_timeout.stop()
         self.idle_pending.clear()
+        self.idle_skipped.clear()
         self.idle_target = None
         self.idle_origin = None
         self.idle_changed.emit("Idle désactivé")
@@ -250,7 +252,9 @@ class FirstResourceClick(QObject):
                 self.journey.step()
                 return
         if not self.idle_pending:
-            if self.journey.active and not any(r.harvestable or r.state == 2 for r in self.snapshot.resources):
+            if self.journey.active and not any(
+                    r.element_id not in self.idle_skipped and (r.harvestable or r.state == 2)
+                    for r in self.snapshot.resources):
                 self.journey.step()
             return
         cells = {r.element_id: r.cell for r in self.snapshot.resources
@@ -276,10 +280,12 @@ class FirstResourceClick(QObject):
     def idle_expired(self):
         if not self.idle or self.idle_target is None:
             return
-        if self.journey.active:
-            self.journey.fail("Récolte non confirmée après 10 s ; départ annulé.")
-            return
+        self.idle_timeout.stop()
+        element_id = self.idle_target
+        self.idle_skipped.add(element_id)
+        self.idle_pending.pop(element_id, None)
         self.idle_target = None
+        self.idle_changed.emit(f"Idle · récolte non confirmée · élément {element_id} ignoré pour cette visite")
         self.idle_next()
 
     def record(self, stage, **fields):
@@ -366,6 +372,7 @@ class FirstResourceClick(QObject):
             {"élément": r.element_id, "case": r.cell, "état": r.state, "récoltable": r.harvestable}
             for r in snapshot.resources])
         if previous is None or previous.map_id != snapshot.map_id:
+            self.idle_skipped.clear()
             was_journey = self.idle and self.journey.active
             travelling = was_journey and self.journey.arrive(snapshot.map_id)
             if not travelling:
@@ -401,7 +408,7 @@ class FirstResourceClick(QObject):
             for element_id in self.idle_pending.keys() - available:
                 del self.idle_pending[element_id]
             now = time.monotonic()
-            for element_id in (available - before) - {self.idle_target}:
+            for element_id in (available - before) - {self.idle_target} - self.idle_skipped:
                 self.idle_pending[element_id] = now + random.randint(800, 1800) / 1000
             if self.idle_target is None and (self.idle_pending or self.journey.active):
                 self.idle_timer.start(0 if self.idle_pending else random.randint(800, 1800))
