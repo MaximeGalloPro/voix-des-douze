@@ -221,6 +221,10 @@ class MainWindow(QMainWindow):
         map_layout.addWidget(exits)
         circuit = QGroupBox("Circuit de cartes · idle")
         circuit_layout = QVBoxLayout(circuit)
+        self.idle_route_selector = QComboBox()
+        self.idle_route_selector.setAccessibleName("Circuits idle enregistrés pour ce profil")
+        self.idle_route_selector.currentTextChanged.connect(self.select_idle_route)
+        circuit_layout.addWidget(self.idle_route_selector)
         self.idle_route_status = QLabel()
         self.idle_route_status.setWordWrap(True)
         circuit_layout.addWidget(self.idle_route_status)
@@ -640,11 +644,36 @@ class MainWindow(QMainWindow):
 
     def refresh_idle_route_status(self):
         settings = self.store.settings
-        route = settings.idle_routes.get(settings.compass_profile, {})
+        collection = settings.idle_routes.get(settings.compass_profile, {})
+        name = collection.get("selected", "")
+        route = collection.get("circuits", {}).get(name, {})
+        self.idle_route_selector.blockSignals(True)
+        self.idle_route_selector.clear()
+        self.idle_route_selector.addItems(list(collection.get("circuits", {})))
+        self.idle_route_selector.setCurrentText(name)
+        self.idle_route_selector.setEnabled(bool(collection.get("circuits")))
+        self.idle_route_selector.blockSignals(False)
         self.idle_route_status.setText(
             f"Profil : {settings.compass_profile or 'à choisir dans Boussole'} · "
-            + (f"{route.get('name') or 'Circuit actif'} · {len(route['maps'])} étapes ordonnées · retour en boucle"
+            + (f"{name} · {len(route['maps'])} étapes ordonnées · retour en boucle"
                if route.get("enabled") else "Circuit désactivé · idle reste sur la carte courante"))
+
+    def select_idle_route(self, name):
+        settings = self.store.settings
+        collection = settings.idle_routes.get(settings.compass_profile, {})
+        if name not in collection.get("circuits", {}) or name == collection.get("selected"):
+            return
+        self.resource_click.stop_idle()
+        self.resource_click.timer.stop()
+        self.resource_click.cancel_debug_sequence()
+        previous = collection["selected"]
+        collection["selected"] = name
+        try:
+            self.store.save()
+        except OSError as exc:
+            collection["selected"] = previous
+            self.show_error(f"Circuit non sélectionné : {exc}")
+        self.refresh_idle_route_status()
 
     def configure_idle_route(self):
         self.resource_click.stop_idle()

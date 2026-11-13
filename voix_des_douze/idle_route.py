@@ -102,7 +102,8 @@ class IdleJourney(QObject):
     def start(self, snapshot):
         w = self.owner.window
         self.profile = w.store.settings.compass_profile
-        configuration = w.store.settings.idle_routes.get(self.profile, {})
+        collection = w.store.settings.idle_routes.get(self.profile, {})
+        configuration = collection.get('circuits', {}).get(collection.get('selected'), {})
         if not configuration.get('enabled'):
             return
         memory = w.compass.memory
@@ -186,8 +187,10 @@ class RouteEditor(QDialog):
         self.resize(620, 440)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f'Profil : {self.profile or "à choisir dans Boussole"}'))
-        configuration = window.store.settings.idle_routes.get(self.profile, {})
-        self.name = QLineEdit(configuration.get('name', ''))
+        collection = window.store.settings.idle_routes.get(self.profile, {})
+        selected = collection.get('selected', '')
+        configuration = collection.get('circuits', {}).get(selected, {})
+        self.name = QLineEdit(selected)
         self.name.setPlaceholderText('Nom du circuit')
         self.name.setAccessibleName('Nom du circuit idle')
         layout.addWidget(self.name)
@@ -294,8 +297,10 @@ class RouteEditor(QDialog):
                 return
         settings = self.window.store.settings
         previous = settings.idle_routes.get(self.profile)
-        settings.idle_routes[self.profile] = {
-            'name': self.name.text().strip(), 'enabled': self.enabled.isChecked(), 'maps': list(self.stops)}
+        name = self.name.text().strip()
+        circuits = dict(previous.get('circuits', {})) if previous else {}
+        circuits[name] = {'enabled': self.enabled.isChecked(), 'maps': list(self.stops)}
+        settings.idle_routes[self.profile] = {'selected': name, 'circuits': circuits}
         try:
             self.window.store.save()
         except OSError as exc:

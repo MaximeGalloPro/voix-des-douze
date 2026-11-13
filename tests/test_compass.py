@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtCore import QEvent, QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLabel, QWidget
+from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QWidget
 from shiboken6 import delete
 
 from voix_des_douze.compass import Compass, CompassSettings
@@ -33,6 +33,7 @@ def make_compass(compass_app, tmp_path):
         window.show_error = window.errors.append
         window.resource_click = FirstResourceClick(window, send=lambda *args: None)
         window.idle_route_status = QLabel(window)
+        window.idle_route_selector = QComboBox(window)
         window.refresh_idle_route_status = lambda: MainWindow.refresh_idle_route_status(window)
         compass = Compass(window)
         windows.append((window, compass))

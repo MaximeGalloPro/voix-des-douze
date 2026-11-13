@@ -93,16 +93,31 @@ class Store:
                                    and all(type(v) is int for v in pos)
                                    for key, pos in s.idle_hint_positions.items())):
                     raise ValueError("Positions du badge IDLE invalides")
-                if (not isinstance(s.idle_routes, dict)
-                        or not all(isinstance(key, str) and key.strip()
-                                   and isinstance(route, dict) and {"enabled", "maps"} <= set(route) <= {"enabled", "maps", "name"}
-                                   and isinstance(route.get("name", ""), str)
-                                   and type(route["enabled"]) is bool
-                                   and isinstance(route["maps"], list)
-                                   and all(type(m) is int and m > 0 for m in route["maps"])
-                                   and (not route["enabled"] or len(set(route["maps"])) >= 2)
-                                   for key, route in s.idle_routes.items())):
+                if not isinstance(s.idle_routes, dict):
                     raise ValueError("Circuit de cartes idle invalide")
+                for key, collection in s.idle_routes.items():
+                    if isinstance(collection, dict) and "maps" in collection:
+                        if not isinstance(collection.get("name", ""), str):
+                            raise ValueError("Circuit de cartes idle invalide")
+                        name = collection.get("name") or "Circuit enregistré"
+                        collection = {"selected": name, "circuits": {
+                            name: {k: v for k, v in collection.items() if k != "name"}}}
+                        s.idle_routes[key] = collection
+                        migrated = True
+                    if (not isinstance(key, str) or not key.strip()
+                            or not isinstance(collection, dict) or set(collection) != {"selected", "circuits"}
+                            or not isinstance(collection["selected"], str)
+                            or not isinstance(collection["circuits"], dict)
+                            or collection["selected"] not in collection["circuits"]):
+                        raise ValueError("Circuit de cartes idle invalide")
+                    for name, route in collection["circuits"].items():
+                        if (not isinstance(name, str) or not name.strip()
+                                or not isinstance(route, dict) or set(route) != {"enabled", "maps"}
+                                or type(route["enabled"]) is not bool
+                                or not isinstance(route["maps"], list)
+                                or not all(type(m) is int and m > 0 for m in route["maps"])
+                                or (route["enabled"] and len(set(route["maps"])) < 2)):
+                            raise ValueError("Circuit de cartes idle invalide")
                 if not isinstance(s.map_exit_screen, str) or not isinstance(s.map_exits, dict):
                     raise ValueError("Configuration des sorties de carte invalide")
                 for key, profile in s.map_exits.items():

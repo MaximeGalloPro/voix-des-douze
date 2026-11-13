@@ -37,7 +37,8 @@ def route(assist, tmp_path):
     for a, b in ((1, 2), (2, 3), (3, 4), (4, 3), (3, 2), (2, 1)):
         memory.observe_transition(a, b)
     w.compass = SimpleNamespace(memory=memory)
-    s.idle_routes[s.compass_profile] = {'enabled': True, 'maps': [1, 4]}
+    s.idle_routes[s.compass_profile] = {'selected': 'Initial', 'circuits': {
+        'Initial': {'enabled': True, 'maps': [1, 4]}}}
     yield w, c, clicks, errors, memory
     c.stop_idle()
     memory.close()
@@ -175,7 +176,7 @@ def test_circuit_start_rejects_unreachable_or_uncalibrated_routes(route, failure
     elif failure == 'other_screen':
         s.map_exit_screen = 'absent'
     else:
-        s.idle_routes[s.compass_profile]['maps'] = []
+        s.idle_routes[s.compass_profile]['circuits']['Initial']['maps'] = []
     c.update(empty(1))
     c.toggle_idle()
     run_next(c)
@@ -215,7 +216,8 @@ def test_failed_harvest_cannot_be_treated_as_an_empty_map(route):
 def test_recording_starts_at_next_map_and_finishes_with_name_per_profile(route):
     w, c, clicks, errors, memory = route
     c.update(empty(1))
-    w.store.settings.idle_routes['Autre personnage'] = {'enabled': False, 'maps': [9]}
+    w.store.settings.idle_routes['Autre personnage'] = {
+        'selected': 'Autre', 'circuits': {'Autre': {'enabled': False, 'maps': [9]}}}
     dialog = RouteEditor(w)
     dialog.name.setText('Boucle des champs')
     dialog.show()
@@ -230,9 +232,10 @@ def test_recording_starts_at_next_map_and_finishes_with_name_per_profile(route):
     assert dialog.result() == QDialog.Accepted
     dialog.observe(empty(3))
     restored = Store(w.store.path).settings.idle_routes
-    assert restored[memory.profile] == {
-        'name': 'Boucle des champs', 'enabled': True, 'maps': [2, 3, 4, 1]}
-    assert restored['Autre personnage'] == {'enabled': False, 'maps': [9]}
+    assert restored[memory.profile] == {'selected': 'Boucle des champs', 'circuits': {
+        'Initial': {'enabled': True, 'maps': [1, 4]},
+        'Boucle des champs': {'enabled': True, 'maps': [2, 3, 4, 1]}}}
+    assert restored['Autre personnage']['circuits']['Autre'] == {'enabled': False, 'maps': [9]}
     reopened = RouteEditor(w)
     assert reopened.name.text() == 'Boucle des champs'
     reopened.start_recording()
@@ -248,6 +251,7 @@ def test_recording_requires_name_and_stops_on_interruption(route):
     w, c, clicks, errors, memory = route
     c.update(empty(1))
     dialog = RouteEditor(w)
+    dialog.name.clear()
     dialog.start_recording()
     assert not dialog.recording
     dialog.name.setText('Test')
@@ -295,7 +299,7 @@ def test_exit_clicks_follow_all_four_calibrated_directions(route):
     for map_id, (x, y) in enumerate(((0, 0), (1, 0), (1, 1), (0, 1)), start=1):
         memory.catalog['maps'][str(map_id)].update(x=x, y=y)
     memory.observe_transition(4, 1)
-    w.store.settings.idle_routes[memory.profile]['maps'] = [1, 2, 3, 4]
+    w.store.settings.idle_routes[memory.profile]['circuits']['Initial']['maps'] = [1, 2, 3, 4]
     c.update(empty(1))
     c.toggle_idle()
     for following, direction in ((2, 'right'), (3, 'down'), (4, 'left'), (1, 'up')):
@@ -315,3 +319,39 @@ def test_exit_clicks_follow_all_four_calibrated_directions(route):
         assert geometry.contains(global_point.toPoint())
         c.update(empty(following))
     assert errors == []
+
+
+def test_named_library_selection_persists_and_drives_idle(route):
+    from PySide6.QtWidgets import QComboBox, QLabel
+    from voix_des_douze.ui import MainWindow
+    w, c, clicks, errors, memory = route
+    settings = w.store.settings
+    profile = memory.profile
+    settings.idle_routes[profile]['circuits']['Retour'] = {'enabled': True, 'maps': [4, 1]}
+    w.idle_route_selector = QComboBox(w)
+    w.idle_route_status = QLabel(w)
+    w.refresh_idle_route_status = lambda: MainWindow.refresh_idle_route_status(w)
+    w.idle_route_selector.currentTextChanged.connect(lambda name: MainWindow.select_idle_route(w, name))
+    w.refresh_idle_route_status()
+    c.update(empty(1))
+    c.toggle_idle()
+    assert c.idle
+    w.idle_route_selector.setCurrentText('Retour')
+    assert not c.idle
+    restored = Store(w.store.path).settings.idle_routes[profile]
+    assert restored['selected'] == 'Retour'
+    assert restored['circuits']['Initial']['maps'] == [1, 4]
+    c.toggle_idle()
+    assert c.journey.stops == (4, 1)
+    assert c.idle
+    assert clicks == []
+
+
+def test_legacy_named_circuit_is_migrated_without_loss(tmp_path):
+    path = tmp_path / 'settings.json'
+    path.write_text(json.dumps({'idle_routes': {
+        'Personnage': {'name': 'Champs', 'enabled': True, 'maps': [1, 2, 1, 3]}}}))
+    expected = {'selected': 'Champs', 'circuits': {
+        'Champs': {'enabled': True, 'maps': [1, 2, 1, 3]}}}
+    assert Store(path).settings.idle_routes['Personnage'] == expected
+    assert Store(path).settings.idle_routes['Personnage'] == expected
